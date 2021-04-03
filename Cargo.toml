@@ -7,7 +7,7 @@ description = "Compile-time reference counting"
 repository = "https://github.com/matthieu-m/static-rc"
 license = "MIT OR Apache-2.0"
 keywords = ["experimental", "reference-counting"]
-categories = ["memory-management"]
+categories = ["memory-management", "no-std"]
 
 [features]
 #   Checks split/join at compile-time rather than run-time.
