@@ -1,0 +1,31 @@
+[package]
+name = "static-rc"
+version = "0.1.0"
+authors = ["Matthieu M. <matthieum.147192@gmail.com>"]
+edition = "2018"
+description = "Compile-time reference counting"
+repository = "https://github.com/matthieu-m/static-rc"
+license = "MIT OR Apache-2.0"
+keywords = ["experimental", "reference-counting"]
+categories = ["memory-management"]
+
+[features]
+#   Checks split/join at compile-time rather than run-time.
+#   This currently requires nightly, see src/lib.rs for the features required.
+compile-time-ratio = []
+
+#   Enables `Stream` on `StaticRc`.
+#   This currently requires nightly, and specifically the `async_stream` feature.
+nightly-async-stream = []
+
+#   Enables `CoerceUnsized` on `StaticRc`.
+#   This currently requires nightly, and specifically the `coerce_unsized` feature.
+nightly-coerce-unsized = []
+
+#   Enables `DispatchFromDyn` on `StaticRc`.
+#   This currently requires nightly, and specifically the `dispatch_from_dyn` feature.
+nightly-dispatch-from-dyn = []
+
+#   Enables `Generator` on `StaticRc`.
+#   This currently requires nightly, and specifically the `generator_trait` feature.
+nightly-generator-trait = []
