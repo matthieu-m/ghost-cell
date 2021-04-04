@@ -19,8 +19,28 @@ use core::{
 
 use alloc::boxed::Box;
 
-#[cfg(nightly_async_stream)]
+#[cfg(feature = "nightly-async-stream")]
 use core::stream;
+
+#[cfg(feature = "nightly-coerce-unsized")]
+use core::ops::CoerceUnsized;
+
+#[cfg(feature = "nightly-dispatch-from-dyn")]
+use core::ops::DispatchFromDyn;
+
+#[cfg(feature = "compile-time-ratio")]
+macro_rules! AssertEqType {
+    ($n:expr, $m: expr) => {
+        ([(); $n - $m], [(); $m - $n])
+    };
+}
+
+#[cfg(not(feature = "compile-time-ratio"))]
+macro_rules! AssertEqType {
+    ($n: expr, $m: expr) => {
+        ()
+    };
+}
 
 /// A compile-time reference-counted pointer.
 ///
@@ -126,14 +146,11 @@ impl<T: ?Sized, const NUM: usize, const DEN: usize> StaticRc<T, NUM, DEN> {
 
     /// Adjusts the NUMerator and DENUMerator of the ratio of the instance, preserving the ratio.
     #[inline(always)]
-    pub fn adjust<const N: usize, const D: usize>(this: Self) -> StaticRc<T, N, D> {
-        //  Check that NUM / DEN == N / D <=> NUM * D == N * DEN
-        #[cfg(compile_time_ratio)]
-        {
-            let _ : [u8; NUM * D - N * DEN];
-            let _ : [u8; N * DEN - NUM * D];
-        }
-        #[cfg(not(compile_time_ratio))]
+    pub fn adjust<const N: usize, const D: usize>(this: Self) -> StaticRc<T, N, D>
+    where
+        AssertEqType!(N * DEN, NUM * D): Sized,
+    {
+        #[cfg(not(feature = "compile-time-ratio"))]
         assert_eq!(NUM * D, N * DEN, "{} / {} != {} / {}", NUM, DEN, N, D);
 
         let pointer = this.pointer;
@@ -144,14 +161,11 @@ impl<T: ?Sized, const NUM: usize, const DEN: usize> StaticRc<T, NUM, DEN> {
 
     /// Splits the current instance into two instances with the specified NUMerators.
     #[inline(always)]
-    pub fn split<const A: usize, const B: usize>(this: Self) -> (StaticRc<T, A, DEN>, StaticRc<T, B, DEN>) {
-        //  Check that (A + B) == NUM.
-        #[cfg(compile_time_ratio)]
-        {
-            let _ : [u8; (A + B) - NUM];
-            let _ : [u8; NUM - (A + B)];
-        }
-        #[cfg(not(compile_time_ratio))]
+    pub fn split<const A: usize, const B: usize>(this: Self) -> (StaticRc<T, A, DEN>, StaticRc<T, B, DEN>)
+    where
+        AssertEqType!(A + B, NUM): Sized,
+    {
+        #[cfg(not(feature = "compile-time-ratio"))]
         assert_eq!(NUM, A + B, "{} != {} + {}", NUM, A, B);
 
         let pointer = this.pointer;
@@ -166,14 +180,11 @@ impl<T: ?Sized, const NUM: usize, const DEN: usize> StaticRc<T, NUM, DEN> {
     ///
     /// If the two instances do no point to the same allocation, as determined by `StaticRc::ptr_eq`.
     #[inline(always)]
-    pub fn join<const A: usize, const B: usize>(left: StaticRc<T, A, DEN>, right: StaticRc<T, B, DEN>) -> Self {
-        //  Check that (A + B) == NUM.
-        #[cfg(compile_time_ratio)]
-        {
-            let _ : [u8; (A + B) - NUM];
-            let _ : [u8; NUM - (A + B)];
-        }
-        #[cfg(not(compile_time_ratio))]
+    pub fn join<const A: usize, const B: usize>(left: StaticRc<T, A, DEN>, right: StaticRc<T, B, DEN>) -> Self
+    where
+        AssertEqType!(NUM, A + B): Sized,
+    {
+        #[cfg(not(feature = "compile-time-ratio"))]
         assert_eq!(NUM, A + B, "{} != {} + {}", NUM, A, B);
 
         assert!(StaticRc::ptr_eq(&left, &right), "{:?} != {:?}", left.pointer.as_ptr(), right.pointer.as_ptr());
@@ -201,13 +212,6 @@ impl<const NUM: usize, const DEN: usize> StaticRc<dyn any::Any, NUM, DEN> {
 impl<T: ?Sized, const NUM: usize, const DEN: usize> Drop for StaticRc<T, NUM, DEN> {
     #[inline(always)]
     fn drop(&mut self) {
-        //  Check that NUM == DEN.
-        #[cfg(compile_time_ratio)]
-        {
-            let _ : [u8; DEN - NUM];
-            let _ : [u8; NUM - DEN];
-        }
-        #[cfg(not(compile_time_ratio))]
         debug_assert_eq!(NUM, DEN, "{} != {}", NUM, DEN);
 
         if NUM == DEN {
@@ -218,6 +222,7 @@ impl<T: ?Sized, const NUM: usize, const DEN: usize> Drop for StaticRc<T, NUM, DE
         }
     }
 }
+
 
 impl<T: ?Sized, const N: usize> convert::AsMut<T> for StaticRc<T, N, N> {
     #[inline(always)]
@@ -239,7 +244,7 @@ impl<T: ?Sized, const N: usize> borrow::BorrowMut<T> for StaticRc<T, N, N> {
     fn borrow_mut(&mut self) -> &mut T { Self::get_mut(self) }
 }
 
-#[cfg(nightly_coerce_unsized)]
+#[cfg(feature = "nightly-coerce-unsized")]
 impl<T, U, const NUM: usize, const DEN: usize> CoerceUnsized<StaticRc<U, NUM, DEN>> for StaticRc<T, NUM, DEN>
 where
     T: ?Sized + marker::Unsize<U>,
@@ -277,7 +282,7 @@ impl<T: ?Sized + fmt::Display, const NUM: usize, const DEN: usize> fmt::Display 
     }
 }
 
-#[cfg(nightly_dispatch_from_dyn)]
+#[cfg(feature = "nightly-dispatch-from-dyn")]
 impl<T, U, const NUM: usize, const DEN: usize> DispatchFromDyn<StaticRc<U, NUM, DEN>> for StaticRc<T, NUM, DEN>
 where
     T: ?Sized + marker::Unsize<U>,
@@ -404,17 +409,17 @@ impl<F: ?Sized + future::Future + marker::Unpin, const N: usize> future::Future 
     }
 }
 
-#[cfg(nightly_generator_trait)]
+#[cfg(feature = "nightly-generator-trait")]
 impl<G: ?Sized + ops::Generator<R> + marker::Unpin, R, const N: usize> ops::Generator<R> for StaticRc<G, N, N> {
     type Yield = G::Yield;
     type Return = G::Return;
 
         fn resume(mut self: pin::Pin<&mut Self>, arg: R) -> ops::GeneratorState<Self::Yield, Self::Return> {
-            G::resume(pin::Pin(&mut *self), arg)
+            G::resume(pin::Pin::new(&mut *self), arg)
         }
 }
 
-#[cfg(nightly_generator_trait)]
+#[cfg(feature = "nightly-generator-trait")]
 impl<G: ?Sized + ops::Generator<R>, R, const N: usize> ops::Generator<R> for pin::Pin<StaticRc<G, N, N>> {
     type Yield = G::Yield;
     type Return = G::Return;
@@ -508,7 +513,7 @@ impl<T: ?Sized, const NUM: usize, const DEN: usize> fmt::Pointer for StaticRc<T,
     }
 }
 
-#[cfg(nightly_async_stream)]
+#[cfg(feature = "nightly-async-stream")]
 impl<S: ?Sized + stream::Stream + marker::Unpin, const N: usize> stream::Stream for StaticRc<S, N, N> {
     type Item = S::Item;
 
