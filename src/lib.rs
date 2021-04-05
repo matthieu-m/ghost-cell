@@ -53,12 +53,13 @@
 #![cfg_attr(not(test), no_std)]
 
 //  Nightly features
-#![cfg_attr(compile_time_ratio, feature(const_generics))]
-#![cfg_attr(compile_time_ratio, feature(const_evaluatable_checked))]
-#![cfg_attr(nightly_async_stream, feature(async_stream))]
-#![cfg_attr(nightly_coerce_unsized, feature(coerce_unsized))]
-#![cfg_attr(nightly_dispatch_from_dyn, feature(dispatch_from_dyn))]
-#![cfg_attr(nightly_generator_trait, feature(generator_trait))]
+#![cfg_attr(feature = "compile-time-ratio", allow(incomplete_features))]
+#![cfg_attr(feature = "compile-time-ratio", feature(const_generics, const_evaluatable_checked))]
+#![cfg_attr(feature = "nightly-async-stream", feature(async_stream))]
+#![cfg_attr(feature = "nightly-coerce-unsized", feature(coerce_unsized))]
+#![cfg_attr(feature = "nightly-dispatch-from-dyn", feature(dispatch_from_dyn))]
+#![cfg_attr(any(feature = "nightly-dispatch-from-dyn", feature = "nightly-coerce-unsized"), feature(unsize))]
+#![cfg_attr(feature = "nightly-generator-trait", feature(generator_trait))]
 
 //  Lints
 #![deny(missing_docs)]
