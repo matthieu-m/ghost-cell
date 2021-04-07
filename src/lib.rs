@@ -1,7 +1,7 @@
-//! `StaticRc` uses Rust's affine type system and const generics to track the shared ownership of a heap-allocated
-//! value safely at compile-time, with no run-time overhead.
+//! `StaticRc`, resp. `StaticRcRef`, use Rust's affine type system and const generics to track the shared ownership
+//!  of a heap-allocated, resp. reference, value safely at compile-time, with no run-time overhead.
 //!
-//! The amount of `unsafe` used within is minimal, and `StaticRc` mostly leverages `Box` for most of the heavy-duty
+//! The amount of `unsafe` used within is minimal, `StaticRc` mostly leverages `Box` for most of the heavy-duty
 //! operations.
 //!
 //! #   Example of usage.
@@ -42,7 +42,9 @@
 //!
 //! #   Options
 //!
-//! The crate is defined for `no_std` environment and only relies on `core` and `alloc`.
+//! The crate is defined for `no_std` environment and only relies on `core` and `alloc` by default.
+//!
+//! The `alloc` crate can be opted out of, though this disables `StaticRc`.
 //!
 //! The crate only uses stable features by default, with a MSRV of 1.51 due to the use of const generics.
 //!
@@ -64,8 +66,16 @@
 //  Lints
 #![deny(missing_docs)]
 
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
-mod static_rc;
+#[macro_use]
+mod utils;
 
-pub use self::static_rc::StaticRc;
+#[cfg(feature = "alloc")]
+mod rc;
+mod rcref;
+
+#[cfg(feature = "alloc")]
+pub use self::rc::StaticRc;
+pub use self::rcref::StaticRcRef;

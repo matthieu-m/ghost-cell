@@ -28,20 +28,6 @@ use core::ops::CoerceUnsized;
 #[cfg(feature = "nightly-dispatch-from-dyn")]
 use core::ops::DispatchFromDyn;
 
-#[cfg(feature = "compile-time-ratio")]
-macro_rules! AssertEqType {
-    ($n:expr, $m: expr) => {
-        ([(); $n - $m], [(); $m - $n])
-    };
-}
-
-#[cfg(not(feature = "compile-time-ratio"))]
-macro_rules! AssertEqType {
-    ($n: expr, $m: expr) => {
-        ()
-    };
-}
-
 /// A compile-time reference-counted pointer.
 ///
 /// The inherent methods of `StaticRc` are all associated functions to avoid conflicts with the the methods of the
@@ -186,6 +172,8 @@ impl<T: ?Sized, const NUM: usize, const DEN: usize> StaticRc<T, NUM, DEN> {
     {
         assert!(StaticRc::ptr_eq(&left, &right), "{:?} != {:?}", left.pointer.as_ptr(), right.pointer.as_ptr());
 
+        //  Safety:
+        //  -   `left` and `right` point to the same pointer.
         unsafe { Self::join_unchecked(left, right) }
     }
 
@@ -240,7 +228,6 @@ impl<T: ?Sized, const NUM: usize, const DEN: usize> Drop for StaticRc<T, NUM, DE
         }
     }
 }
-
 
 impl<T: ?Sized, const N: usize> convert::AsMut<T> for StaticRc<T, N, N> {
     #[inline(always)]
