@@ -184,10 +184,28 @@ impl<T: ?Sized, const NUM: usize, const DEN: usize> StaticRc<T, NUM, DEN> {
     where
         AssertEqType!(NUM, A + B): Sized,
     {
+        assert!(StaticRc::ptr_eq(&left, &right), "{:?} != {:?}", left.pointer.as_ptr(), right.pointer.as_ptr());
+
+        unsafe { Self::join_unchecked(left, right) }
+    }
+
+    /// Joins two instances into a single instance without checking whether they point to the same allocation.
+    ///
+    /// Unless `compile-time-ratio` is activated, the ratios are checked nevertheless.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee that those instances point to the same allocation.
+    #[inline(always)]
+    pub unsafe fn join_unchecked<const A: usize, const B: usize>(
+        left: StaticRc<T, A, DEN>,
+        right: StaticRc<T, B, DEN>,
+    ) -> Self
+    where
+        AssertEqType!(NUM, A + B): Sized,
+    {
         #[cfg(not(feature = "compile-time-ratio"))]
         assert_eq!(NUM, A + B, "{} != {} + {}", NUM, A, B);
-
-        assert!(StaticRc::ptr_eq(&left, &right), "{:?} != {:?}", left.pointer.as_ptr(), right.pointer.as_ptr());
 
         let pointer = left.pointer;
         mem::forget(left);
