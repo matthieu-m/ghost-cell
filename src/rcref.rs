@@ -10,9 +10,10 @@ use core::{
     hash,
     iter,
     marker::{self, PhantomData},
+    mem::{self, MaybeUninit},
     ops,
     pin,
-    ptr::NonNull,
+    ptr::{self, NonNull},
     task,
 };
 
@@ -113,6 +114,10 @@ impl<'a, T: ?Sized, const NUM: usize, const DEN: usize> StaticRcRef<'a, T, NUM, 
     }
 
     /// Adjusts the NUMerator and DENumerator of the ratio of the instance, preserving the ratio.
+    ///
+    /// #   Panics
+    ///
+    /// If the compile-time-ratio feature is not used, and the ratio is not preserved; that is `N / D <> NUM / DEN`.
     #[inline(always)]
     pub fn adjust<const N: usize, const D: usize>(this: Self) -> StaticRcRef<'a, T, N, D>
     where
@@ -125,6 +130,10 @@ impl<'a, T: ?Sized, const NUM: usize, const DEN: usize> StaticRcRef<'a, T, NUM, 
     }
 
     /// Splits the current instance into two instances with the specified NUMerators.
+    ///
+    /// #   Panics
+    ///
+    /// If the compile-time-ratio feature is not used, and the ratio is not preserved; that is `A + B <> NUM`.
     #[inline(always)]
     pub fn split<const A: usize, const B: usize>(this: Self) -> (StaticRcRef<'a, T, A, DEN>, StaticRcRef<'a, T, B, DEN>)
     where
@@ -139,11 +148,55 @@ impl<'a, T: ?Sized, const NUM: usize, const DEN: usize> StaticRcRef<'a, T, NUM, 
         (StaticRcRef { pointer, _marker, }, StaticRcRef { pointer, _marker, })
     }
 
+    /// Splits the current instance into two instances with the specified NUMerators.
+    ///
+    /// #   Panics
+    ///
+    /// If the compile-time-ratio feature is not used, and the ratio is not preserved; that is `N * DIM / D <> NUM / DEN`.
+    #[inline(always)]
+    pub fn split_array<const N: usize, const D: usize, const DIM: usize>(this: Self) -> [StaticRcRef<'a, T, N, D>; DIM]
+    where
+        T: 'a,
+        AssertEqType!(N * DIM * DEN, NUM * D): Sized,
+        AssertLeType!(mem::size_of::<[StaticRcRef<'a, T, N, D>; DIM]>(), usize::MAX / 2 + 1): Sized,
+    {
+        #[cfg(not(feature = "compile-time-ratio"))]
+        assert_eq!(NUM * D, N * DIM * DEN, "{} * {} != {} * {} * {}", NUM, D, N, DIM, DEN);
+
+        #[cfg(not(feature = "compile-time-ratio"))]
+        assert!(mem::size_of::<[StaticRcRef<T, N, D>; DIM]>() <= (isize::MAX as usize),
+            "Size of result ({}) exceeeds isize::MAX", mem::size_of::<[StaticRcRef<T, N, D>; DIM]>());
+
+        let pointer = this.pointer;
+        let _marker = PhantomData;
+
+        let mut array = MaybeUninit::uninit();
+
+        for i in 0..DIM {
+            //  Safety:
+            //  -   `destination` within bounds of allocated array (< DIM).
+            //  -   Offset doesn't overflow `isize`, as per array-size assertion.
+            //  -   Offset doesn't wrap around, as per array-size assertion.
+            let destination = unsafe { (array.as_mut_ptr() as *mut StaticRcRef<T, N, D>).add(i) };
+
+            //  Safety:
+            //  -   `destination` is valid for writes.
+            //  -   `destination` is correctly aligned.
+            unsafe { ptr::write(destination, StaticRcRef { pointer, _marker, }); }
+        }
+
+        //  Safety:
+        //  -   Every element of the array is now initialized.
+        unsafe { array.assume_init() }
+    }
+
     /// Joins two instances into a single instance.
     ///
     /// #   Panics
     ///
     /// If the two instances do no point to the same allocation, as determined by `StaticRcRef::ptr_eq`.
+    ///
+    /// If the compile-time-ratio feature is not used and the ratio is not preserved; that is `A + B <> NUM`.
     #[inline(always)]
     pub fn join<const A: usize, const B: usize>(left: StaticRcRef<'a, T, A, DEN>, right: StaticRcRef<'a, T, B, DEN>) -> Self
     where
@@ -163,6 +216,10 @@ impl<'a, T: ?Sized, const NUM: usize, const DEN: usize> StaticRcRef<'a, T, NUM, 
     /// # Safety
     ///
     /// The caller must guarantee that those instances point to the same allocation.
+    ///
+    /// #   Panics
+    ///
+    /// If the compile-time-ratio feature is not used and the ratio is not preserved; that is `A + B <> NUM`.
     #[inline(always)]
     pub unsafe fn join_unchecked<const A: usize, const B: usize>(
         left: StaticRcRef<'a, T, A, DEN>,
