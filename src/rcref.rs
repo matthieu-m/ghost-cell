@@ -233,6 +233,35 @@ impl<'a, T: ?Sized, const NUM: usize, const DEN: usize> StaticRcRef<'a, T, NUM, 
 
         Self { pointer: left.pointer, _marker: PhantomData, }
     }
+
+    /// Lifts `this` into the slot provided by `fun`; returns the previous value of the slot, if any.
+    ///
+    /// This function is useful, for example, to "tie the knot" when appending 2 linked-lists: it is easy to splice the
+    /// the head of the back linked-list at the back of the front linked-list, but then one has lost the head pointer
+    /// and can no longer splice the tail of the front linked-list to it.
+    pub fn lift<'b, F>(this: Self, fun: F) -> Option<Self>
+    where
+        'a: 'b,
+        T: 'b,
+        F: FnOnce(&'b Self) -> &'b mut Option<Self>,
+    { 
+        let slot = {
+            //  Safety:
+            //  -   Even though the lifetime of `this_ref` and `this` was "unlinked" by going through a pointer,
+            //      `this_ref` will notbe used after moving `this`, and therefore will remain valid throughout its used.
+            let this_ref = unsafe { &*(&this as *const _) };
+    
+            fun(this_ref) as *mut Option<Self>
+        };
+    
+        //  Safety:
+        //  -   Even though the lifetime of `slot` and `this` was "unlinked" by going through a pointer, `slot` is
+        //      still validfor the duration of this function because `this` is not destroyed, and therefore its
+        //      pointee is still alive.
+        let slot = unsafe { &mut *slot };
+    
+        slot.replace(this)
+    }
 }
 
 impl<'a, const NUM: usize, const DEN: usize> StaticRcRef<'a, dyn any::Any, NUM, DEN> {
