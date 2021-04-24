@@ -65,10 +65,10 @@ impl<T, const N: usize> StaticRc<T, N, N> {
     pub fn into_inner(this: Self) -> T {
         //  Safety:
         //  -   Ratio = 1, hence full ownership.
-        let value = unsafe { ptr::read(this.pointer.as_ptr()) };
+        let boxed = unsafe { Box::from_raw(this.pointer.as_ptr()) };
         mem::forget(this);
 
-        value
+        *boxed
     }
 }
 
