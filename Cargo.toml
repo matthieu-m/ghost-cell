@@ -1,6 +1,6 @@
 [package]
 name = "static-rc"
-version = "0.2.2"
+version = "0.3.0"
 authors = ["Matthieu M. <matthieum.147192@gmail.com>"]
 edition = "2018"
 description = "Compile-time reference counting"
