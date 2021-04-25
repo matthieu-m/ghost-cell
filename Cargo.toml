@@ -1,6 +1,6 @@
 [package]
 name = "ghost-cell"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Matthieu M. <matthieum.147192@gmail.com>"]
 edition = "2018"
 description = "Compile-time zero-cost borrow-checking of aliased references"
