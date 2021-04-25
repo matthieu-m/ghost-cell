@@ -14,12 +14,15 @@ categories = ["memory-management", "no-std"]
 #   Enables `alloc` (hence `StaticRc`) by default.
 default = ["alloc"]
 
-#   Checks split/join at compile-time rather than run-time.
+#   Checks `split`/`join` at compile-time rather than run-time.
 #   This currently requires nightly, see src/lib.rs for the features required.
 compile-time-ratio = []
 
 #   Enables `alloc`, and therefore `StaticRc`.
 alloc = []
+
+#   Enables `lift`, an experimental feature to allow tying the knot.
+experimental-lift = []
 
 #   Enables `Stream` on `StaticRc`.
 #   This currently requires nightly, and specifically the `async_stream` feature.

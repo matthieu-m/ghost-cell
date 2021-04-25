@@ -72,10 +72,18 @@ extern crate alloc;
 #[macro_use]
 mod utils;
 
+mod rcref;
+
+pub use self::rcref::StaticRcRef;
+
 #[cfg(feature = "alloc")]
 mod rc;
-mod rcref;
 
 #[cfg(feature = "alloc")]
 pub use self::rc::StaticRc;
-pub use self::rcref::StaticRcRef;
+
+#[cfg(feature = "experimental-lift")]
+mod lift;
+
+#[cfg(feature = "experimental-lift")]
+pub use self::lift::{lift, lift_with, lift_with_mut};
