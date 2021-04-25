@@ -1,0 +1,18 @@
+[package]
+name = "ghost-collections"
+version = "0.1.0"
+authors = ["Matthieu M. <matthieum.147192@gmail.com>"]
+edition = "2018"
+description = "Safe collections, on stable Rust"
+repository = "https://github.com/matthieu-m/ghost-collections"
+license = "MIT OR Apache-2.0"
+keywords = ["experimental", "aliasing", "borrowing"]
+categories = ["data-structures", "no-std"]
+
+[dependencies]
+ghost-cell = "0.2"
+static-rc = { version = "0.3.0", features = ["experimental-lift"] }
+
+[features]
+# Enables a variety of features relying on the experimental ghost-cell `GhostCursor`, such as LinkedList's append and cursor_mut.
+experimental-ghost-cursor = ["ghost-cell/experimental-ghost-cursor"]
