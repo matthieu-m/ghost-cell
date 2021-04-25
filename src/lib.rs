@@ -41,3 +41,9 @@
 mod ghost_cell;
 
 pub use self::ghost_cell::{GhostCell, GhostToken};
+
+#[cfg(feature = "experimental-ghost-cursor")]
+mod ghost_cursor;
+
+#[cfg(feature = "experimental-ghost-cursor")]
+pub use self::ghost_cursor::GhostCursor;

@@ -8,3 +8,7 @@ repository = "https://github.com/matthieu-m/ghost-cell"
 license = "MIT OR Apache-2.0"
 keywords = ["experimental", "aliasing", "borrowing"]
 categories = ["memory-management", "no-std"]
+
+[features]
+# Enables the use of unproven GhostCursor.
+experimental-ghost-cursor = []
