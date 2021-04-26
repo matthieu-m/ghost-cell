@@ -34,7 +34,7 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
     /// If there is no next element, either because the list is empty, or because the current element is the back
     /// element, then an error is returned.
     pub fn move_next(&mut self) -> Result<(), ()> {
-        if let Some(node) = self.peek_next_ghost() {
+        if let Some(node) = self.peek_next_node() {
             self.node = Some(node);
             Ok(())
         } else {
@@ -47,7 +47,7 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
     /// If there is no previous element, either because the list is empty, or because the current element is the front
     /// element, then an error is returned.
     pub fn move_prev(&mut self) -> Result<(), ()> {
-        if let Some(node) = self.peek_prev_ghost() {
+        if let Some(node) = self.peek_prev_node() {
             self.node = Some(node);
             Ok(())
         } else {
@@ -61,18 +61,18 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
     pub fn current(&self) -> Option<&'a T> { self.node.map(|node| &node.borrow(self.token).value) }
 
     /// Returns a reference to the next element, if any.
-    pub fn peek_next(&self) -> Option<&'a T> { self.peek_next_ghost().map(|node| &node.borrow(self.token).value) }
+    pub fn peek_next(&self) -> Option<&'a T> { self.peek_next_node().map(|node| &node.borrow(self.token).value) }
 
     /// Returns a reference to the next element, if any.
-    pub fn peek_prev(&self) -> Option<&'a T> { self.peek_prev_ghost().map(|node| &node.borrow(self.token).value) }
+    pub fn peek_prev(&self) -> Option<&'a T> { self.peek_prev_node().map(|node| &node.borrow(self.token).value) }
 
     //  Internal: returns a reference to the next GhostNode.
-    fn peek_next_ghost(&self) -> Option<&'a GhostNode<'brand, T>> {
+    fn peek_next_node(&self) -> Option<&'a GhostNode<'brand, T>> {
         self.node?.borrow(self.token).next.as_ref().map(|n| &**n)
     }
 
     //  Internal: returns a reference to the previous GhostNode.
-    fn peek_prev_ghost(&self) -> Option<&'a GhostNode<'brand, T>> {
+    fn peek_prev_node(&self) -> Option<&'a GhostNode<'brand, T>> {
         self.node?.borrow(self.token).prev.as_ref().map(|n| &**n)
     }
 }
@@ -138,7 +138,7 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
     pub fn peek_next(&self) -> Option<&T> {
         let token = self.inner.token();
 
-        self.peek_next_ghost().map(|node| &node.borrow(token).value)
+        self.peek_next_node().map(|node| &node.borrow(token).value)
     }
 
     /// Returns a reference to the previous element, if any.
@@ -150,16 +150,16 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
     pub fn peek_prev(&self) -> Option<&T> {
         let token = self.inner.token();
 
-        self.peek_prev_ghost().map(|node| &node.borrow(token).value)
+        self.peek_prev_node().map(|node| &node.borrow(token).value)
     }
 
     //  Internal: returns a reference to the next GhostNode.
-    fn peek_next_ghost(&self) -> Option<&GhostNode<'brand, T>> {
+    fn peek_next_node(&self) -> Option<&GhostNode<'brand, T>> {
         self.inner.borrow().and_then(|node| node.next.as_ref().map(|n| &**n))
     }
 
     //  Internal: returns a reference to the previous GhostNode.
-    fn peek_prev_ghost(&self) -> Option<&GhostNode<'brand, T>> {
+    fn peek_prev_node(&self) -> Option<&GhostNode<'brand, T>> {
         self.inner.borrow().and_then(|node| node.prev.as_ref().map(|n| &**n))
     }
 }

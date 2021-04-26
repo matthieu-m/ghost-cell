@@ -18,6 +18,5 @@
 //  Lints.
 #![deny(missing_docs)]
 
-mod linked_list;
-
-pub use self::linked_list::*;
+pub mod linked_list;
+pub mod tripod_list;

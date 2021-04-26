@@ -6,23 +6,20 @@
 mod iter;
 mod cursor;
 
-use ghost_cell::{GhostCell, GhostToken};
-use static_rc::StaticRc;
-
 pub use iter::Iter;
 pub use cursor::Cursor;
+
+#[cfg(feature = "experimental-ghost-cursor")]
+pub use cursor::CursorMut;
+
+use ghost_cell::{GhostCell, GhostToken};
+use static_rc::StaticRc;
 
 #[cfg(feature = "experimental-ghost-cursor")]
 use core::mem;
 
 #[cfg(feature = "experimental-ghost-cursor")]
 use ghost_cell::GhostCursor;
-
-#[cfg(feature = "experimental-ghost-cursor")]
-use static_rc;
-
-#[cfg(feature = "experimental-ghost-cursor")]
-pub use cursor::CursorMut;
 
 /// A safe implementation of a linked-list build upon `GhostCell` and `StaticRc`.
 ///
@@ -200,7 +197,7 @@ impl<'brand, T> LinkedList<'brand, T> {
     /// This operation is O(1) in the number of elements.
     ///
     /// No memory allocation or deallocation occurs.
-    pub fn append(&mut self, other: &mut LinkedList<'brand, T>, token: &mut GhostToken<'brand>) {
+    pub fn append(&mut self, other: &mut Self, token: &mut GhostToken<'brand>) {
         let other_ht = if let Some(other_ht) = other.head_tail.take() {
             other_ht
         } else {
@@ -241,7 +238,7 @@ impl<'brand, T> LinkedList<'brand, T> {
     /// This operation is O(1) in the number of elements.
     ///
     /// No memory allocation or deallocation occurs.
-    pub fn prepend(&mut self, other: &mut LinkedList<'brand, T>, token: &mut GhostToken<'brand>) {
+    pub fn prepend(&mut self, other: &mut Self, token: &mut GhostToken<'brand>) {
         other.append(self, token);
         mem::swap(self, other);
     }
@@ -265,7 +262,7 @@ impl<'brand, T> LinkedList<'brand, T> {
     /// This operations is O(min(`at`, N)), where N is the number of elements.
     ///
     /// No memory allocation or deallocation occurs.
-    pub fn split_off(&mut self, at: usize, token: &mut GhostToken<'brand>) -> Option<LinkedList<'brand, T>> {
+    pub fn split_off(&mut self, at: usize, token: &mut GhostToken<'brand>) -> Option<Self> {
         //  This is not the most optimal implementation, but it works, and respects the promised algorithmic complexity.
         let mut head = LinkedList::new();
 
@@ -338,6 +335,8 @@ type FullNodePtr<'brand, T> = StaticRc<GhostNode<'brand, T>, 2, 2>;
 #[cfg(test)]
 mod tests {
 
+use std::panic::{self, AssertUnwindSafe};
+
 use super::*;
 
 pub(crate) fn with_list<T, R, F>(initial: Vec<T>, fun: F) -> R
@@ -351,11 +350,11 @@ where
             list.push_back(value, &mut token);
         }
 
-        let result = fun(&mut token, &mut list);
+        let result = panic::catch_unwind(AssertUnwindSafe(|| fun(&mut token, &mut list)));
 
         list.clear(&mut token);
 
-        result
+        result.expect("No Panic")
     })
 }
 
