@@ -16,3 +16,6 @@ static-rc = { version = "0.3.0", features = ["experimental-lift"] }
 [features]
 # Enables a variety of features relying on the experimental ghost-cell `GhostCursor`, such as LinkedList's append and cursor_mut.
 experimental-ghost-cursor = ["ghost-cell/experimental-ghost-cursor"]
+
+# Enables debug printing to stderr, only available in test to debug trees.
+test-tree-debug = []

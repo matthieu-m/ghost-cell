@@ -20,3 +20,4 @@
 
 pub mod linked_list;
 pub mod tripod_list;
+pub mod tripod_tree;

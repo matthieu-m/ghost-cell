@@ -345,7 +345,7 @@ type ThirdTuple<'brand, T> = (ThirdNodePtr<'brand, T>, ThirdNodePtr<'brand, T>, 
 mod tests {
 
 use std::{
-    panic::{self, AssertUnwindSafe},   
+    panic::{self, AssertUnwindSafe},
     ops::Range,
 };
 

@@ -7,9 +7,9 @@ use super::{GhostNode, Iter, ThirdNodePtr, TripodList};
 /// A Cursor over the TripodList.
 pub struct Cursor<'a, 'brand, T> {
     token: &'a GhostToken<'brand>,
-    index: usize,
-    node: Option<&'a GhostNode<'brand, T>>,
     list: &'a TripodList<'brand, T>,
+    node: Option<&'a GhostNode<'brand, T>>,
+    index: usize,
 }
 
 impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
@@ -84,8 +84,6 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
     }
 
     /// Returns a reference to the current element, if any.
-    ///
-    /// Unless the list is empty, there should always be a current element.
     pub fn current(&self) -> Option<&'a T> { self.node.map(|node| &node.borrow(self.token).value) }
 
     /// Returns a reference to the next element, if any.
@@ -124,20 +122,20 @@ impl<'a, 'brand, T> Copy for Cursor<'a, 'brand, T> {}
 /// A mutable cursor allows freely moving back-and-forth amongst the elements of the list, and mutate the list as any
 /// point.
 ///
-/// Cursors index the list in a logically circular way. To accomodate this, there is a "twilight" non-element that
-/// `None` between the head and tail of the list.
+/// Cursors index the list in a logically circular way. To accomodate this, there is a "twilight" non-element
+/// represented by `None` between the head and tail of the list.
 ///
 /// #   Warning.
 ///
 /// This cursor mutates the list as it iterates. Although the list is left in a safe state by construction, forgoing the
-/// drop of this cursor -- unless it points to the "twilight" non-element -- will leave the list in and unusable state.
+/// drop of this cursor -- unless it points to the "twilight" non-element -- will leave the list in an unusable state.
 ///
 /// Any further mutable operation on the list, including calling `clear`, is at risk of panicking.
 pub struct CursorMut<'a, 'brand, T> {
     token: &'a mut GhostToken<'brand>,
-    index: usize,
-    node: Option<ThirdNodePtr<'brand, T>>,
     list: &'a mut TripodList<'brand, T>,
+    node: Option<ThirdNodePtr<'brand, T>>,
+    index: usize,
 }
 
 impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
@@ -202,8 +200,6 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
     }
 
     /// Returns a mutable reference to the current element, if any.
-    ///
-    /// Unless the list is empty, there should always be a current element.
     pub fn current(&mut self) -> Option<&mut T> {
         let tripod = self.node.as_ref()?;
         Some(&mut tripod.borrow_mut(self.token).value)
