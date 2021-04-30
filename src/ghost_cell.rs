@@ -58,6 +58,24 @@ impl<'brand, T> GhostCell<'brand, T> {
     pub fn borrow_mut<'a>(&'a self, _: &'a mut GhostToken<'brand>) -> &'a mut T {
         unsafe{ &mut *self.value.get() }
     }
+
+}
+
+//  Safe, convenience methods
+#[forbid(unsafe_code)]
+impl<'brand, T> GhostCell<'brand, T> {
+    /// Returns the value, replacing it by the supplied one.
+    pub fn replace(&self, value: T, token: &mut GhostToken<'brand>) -> T {
+        mem::replace(self.borrow_mut(token), value)
+    }
+
+    /// Returns the value, replacing it with the default value.
+    pub fn take(&self, token: &mut GhostToken<'brand>) -> T
+    where
+        T: Default,
+    {
+        self.replace(T::default(), token)
+    }
 }
 
 //
