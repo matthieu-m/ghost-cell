@@ -6,7 +6,7 @@ use core::{
 
 use ghost_cell::GhostToken;
 
-use super::{GhostNode, QuarterNodePtr, Side, TripodNode, TripodTree};
+use super::{GhostNode, QuarterNodePtr, Side, TripodTree};
 
 /// A Cursor over the TripodTree.
 ///
@@ -71,7 +71,7 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
     /// If the cursor points to the "twilight" non-element, moves to the root instead, if any.
     pub fn move_left(&mut self) {
         let (node, index) = self.peek_left_node();
-        
+
         self.index = index;
         self.node = node;
     }
@@ -83,7 +83,19 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
     /// If the cursor points to the "twilight" non-element, moves to the root instead, if any.
     pub fn move_right(&mut self) {
         let (node, index) = self.peek_right_node();
-        
+
+        self.index = index;
+        self.node = node;
+    }
+
+    /// Moves the cursor to the child element on the design side.
+    ///
+    /// If the element the cursor points to has no such element, moves to the "twilight" non-element.
+    ///
+    /// If the cursor points to the "twilight" non-element, moves to the root instead, if any.
+    pub fn move_down(&mut self, side: Side) {
+        let (node, index) = self.peek_down_node(side);
+
         self.index = index;
         self.node = node;
     }
@@ -139,6 +151,24 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
         }
     }
 
+    /// Attempts to move the cursor down to the designed side, if any.
+    ///
+    /// Returns a reference to the pointed to element, in case of success.
+    ///
+    /// If the element the cursor is pointing to has no child on that side, or is the "twilight" non-element, nothing
+    /// happens and None is returned.
+    pub fn try_move_down(&mut self, side: Side) -> Option<&'a T> {
+        let (node, index) = self.peek_down_node(side);
+
+        if let Some(_) = node {
+            self.index = index;
+            self.node = node;
+            self.current()
+        } else {
+            None
+        }
+    }
+
     /// Returns a reference to the current element, if any.
     pub fn current(&self) -> Option<&'a T> { self.node.map(|node| &node.borrow(self.token).value) }
 
@@ -151,6 +181,9 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
     /// Returns a reference to the right child, if any.
     pub fn peek_right(&self) -> Option<&'a T> { self.peek_right_node().0.map(|node| &node.borrow(self.token).value) }
 
+    /// Returns a reference to the child element on the designed side, if any.
+    pub fn peek_down(&self, side: Side) -> Option<&'a T> { self.peek_down_node(side).0.map(|node| &node.borrow(self.token).value) }
+
     //  Internal; extract the root and its index from the tree.
     fn root_of(token: &'a GhostToken<'brand>, tree: &'a TripodTree<'brand, T>) -> (Option<&'a GhostNode<'brand, T>>, usize) {
         let root = tree.root.as_ref().map(|node| &**node);
@@ -159,7 +192,7 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
         (root, index)
     }
 
-    //  Internal: returns a reference to the up GhostNode, and the matching index.
+    //  Internal; returns a reference to the up GhostNode, and the matching index.
     fn peek_up_node(&self) -> (Option<&'a GhostNode<'brand, T>>, usize) {
         if let Some(node) = self.node {
             let node = node.borrow(self.token);
@@ -184,7 +217,7 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
         }
     }
 
-    //  Internal: returns a reference to the left GhostNode, and the matching index.
+    //  Internal; returns a reference to the left GhostNode, and the matching index.
     fn peek_left_node(&self) -> (Option<&'a GhostNode<'brand, T>>, usize) {
         if let Some(node) = self.node {
             let node = node.borrow(self.token);
@@ -202,7 +235,7 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
         }
     }
 
-    //  Internal: returns a reference to the right GhostNode, and the matching index.
+    //  Internal; returns a reference to the right GhostNode, and the matching index.
     fn peek_right_node(&self) -> (Option<&'a GhostNode<'brand, T>>, usize) {
         if let Some(node) = self.node {
             let node = node.borrow(self.token);
@@ -210,6 +243,29 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
 
             let index = if let Some(right) = dest {
                 self.index + 1 + right.borrow(self.token).left_size(self.token)
+            } else {
+                self.len()
+            };
+
+            (dest, index)
+        } else {
+            Self::root_of(self.token, self.tree)
+        }
+    }
+
+    //  Internal; returns a reference to the child GhostNode on the designed side, and the matching index.
+    fn peek_down_node(&self, side: Side) -> (Option<&'a GhostNode<'brand, T>>, usize) {
+        if let Some(node) = self.node {
+            let node = node.borrow(self.token);
+            let dest = node.child(side);
+
+            let index = if let Some(dest) = dest {
+                let opposite_size = dest.borrow(self.token).child_size(side.opposite(), self.token);
+
+                match side {
+                    Side::Left => self.index - 1 - opposite_size,
+                    Side::Right => self.index + 1 + opposite_size,
+                }
             } else {
                 self.len()
             };
@@ -558,7 +614,7 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
         let tree = &*self.tree;
 
         Cursor { token, index, node, tree, }
-    } 
+    }
 
     /// Returns the index of the element pointed to by the cursor in the tree.
     ///
@@ -604,11 +660,24 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
         self.switch_tripod(new_tripod, index);
     }
 
+    /// Moves the cursor to the child element on the design side.
+    ///
+    /// If the element the cursor points to has no such element, moves to the "twilight" non-element.
+    ///
+    /// If the cursor points to the "twilight" non-element, moves to the root instead, if any.
+    pub fn move_down(&mut self, side: Side) {
+        let (node, index) = self.peek_down_node(side);
+        let new_tripod = node.map(|node| self.deploy_tripod(node));
+
+        self.switch_tripod(new_tripod, index);
+    }
+
     /// Attempts to move the cursor to the parent element, if any.
     ///
     /// Returns a reference to the pointed to element, in case of success.
     ///
-    /// If the element the cursor points to has no parent element, or is the "twilight" element, does not move.
+    /// If the element the cursor points to has no parent element, or is the "twilight" element, nothing
+    /// happens and None is returned.
     pub fn try_move_up(&mut self) -> Option<&mut T> {
         let (node, index) = self.peek_up_node();
 
@@ -625,7 +694,8 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
     ///
     /// Returns a reference to the pointed to element, in case of success.
     ///
-    /// If the element the cursor points to has no left child, or is the "twilight" element, does not move.
+    /// If the element the cursor points to has no left child, or is the "twilight" non-element, nothing
+    /// happens and None is returned.
     pub fn try_move_left(&mut self) -> Option<&mut T> {
         let (node, index) = self.peek_left_node();
 
@@ -642,9 +712,28 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
     ///
     /// Returns a reference to the pointed to element, in case of success.
     ///
-    /// If the element the cursor points to has no right child, or is the "twilight" element, does not move.
+    /// If the element the cursor points to has no right child, or is the "twilight" non-element, nothing
+    /// happens and None is returned.
     pub fn try_move_right(&mut self) -> Option<&mut T> {
         let (node, index) = self.peek_right_node();
+
+        if let Some(_) = node {
+            let new_tripod = node.map(|node| self.deploy_tripod(node));
+            self.switch_tripod(new_tripod, index);
+            self.current()
+        } else {
+            None
+        }
+    }
+
+    /// Attempts to move the cursor down to the designed side, if any.
+    ///
+    /// Returns a reference to the pointed to element, in case of success.
+    ///
+    /// If the element the cursor is pointing to has no child on that side, or is the "twilight" non-element, nothing
+    /// happens and None is returned.
+    pub fn try_move_down(&mut self, side: Side) -> Option<&mut T> {
+        let (node, index) = self.peek_down_node(side);
 
         if let Some(_) = node {
             let new_tripod = node.map(|node| self.deploy_tripod(node));
@@ -669,6 +758,9 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
 
     /// Returns a reference to the right element, if any.
     pub fn peek_right(&self) -> Option<&T> { self.peek_right_node().0.map(|node| &node.borrow(self.token).value) }
+
+    /// Returns a reference to the child element on the designed side, if any.
+    pub fn peek_down(&self, side: Side) -> Option<&T> { self.peek_down_node(side).0.map(|node| &node.borrow(self.token).value) }
 
     //  Internal; move to the root node.
     fn move_to_root(&mut self) {
@@ -710,15 +802,15 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
         (root, index)
     }
 
-    //  Internal: deploys a tripod.
+    //  Internal; deploys a tripod.
     fn deploy_tripod(&self, node: &GhostNode<'brand, T>) -> QuarterNodePtr<'brand, T> { node.borrow(self.token).deploy() }
 
-    //  Internal: deploys a tripod.
+    //  Internal; deploys a tripod.
     fn retract_tripod(&mut self, node: QuarterNodePtr<'brand, T>) {
         super::retract(node, self.token);
     }
 
-    //  Internal: replace the current tripod with another, retracting the former if any.
+    //  Internal; replace the current tripod with another, retracting the former if any.
     fn switch_tripod(&mut self, new_tripod: Option<QuarterNodePtr<'brand, T>>, index: usize) {
         self.index = index;
 
@@ -727,19 +819,24 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
         }
     }
 
-    //  Internal: returns a reference to the up GhostNode, and the matching index.
+    //  Internal; returns a reference to the up GhostNode, and the matching index.
     fn peek_up_node(&self) -> (Option<&GhostNode<'brand, T>>, usize) {
         self.as_cursor().peek_up_node()
     }
 
-    //  Internal: returns a reference to the left GhostNode, and the matching index.
+    //  Internal; returns a reference to the left GhostNode, and the matching index.
     fn peek_left_node(&self) -> (Option<&GhostNode<'brand, T>>, usize) {
         self.as_cursor().peek_left_node()
     }
 
-    //  Internal: returns a reference to the right GhostNode, and the matching index.
+    //  Internal; returns a reference to the right GhostNode, and the matching index.
     fn peek_right_node(&self) -> (Option<&GhostNode<'brand, T>>, usize) {
         self.as_cursor().peek_right_node()
+    }
+
+    //  Internal; returns a reference to the child GhostNode on the designed side, and the matching index.
+    fn peek_down_node(&self, side: Side) -> (Option<&GhostNode<'brand, T>>, usize) {
+        self.as_cursor().peek_down_node(side)
     }
 }
 
@@ -828,8 +925,6 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
         }
 
         let node = self.peek_at_node(at);
-        node.map(|node| self.describe_node("move_to", node));
-
         let new_tripod = node.map(|node| self.deploy_tripod(node));
 
         self.switch_tripod(new_tripod, at);
@@ -965,8 +1060,8 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
     ///
     /// A single memory allocation is performed.
     pub fn insert_after(&mut self, value: T) {
-        let new_node = TripodNode::new(value, self.token);
-        self.splice_after(new_node);
+        let mut other = TripodTree::singleton(value, self.token);
+        self.splice_after(&mut other);
     }
 
     /// Inserts a new element in the tree before the current one.
@@ -975,21 +1070,23 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
     ///
     /// A single memory allocation is performed.
     pub fn insert_before(&mut self, value: T) {
-        let new_node = TripodNode::new(value, self.token);
-        self.splice_before(new_node);
+        let mut other = TripodTree::singleton(value, self.token);
+        self.splice_before(&mut other);
     }
 
     /// Removes the current element from the tree.
     ///
-    /// See `remove_current_as_node` for details.
+    /// See `remove_current_as_tree` for details.
     ///
     /// A single memory deallocation is performed.
     pub fn remove_current(&mut self) -> Option<T> {
-        let removed = self.remove_current_as_node();
-        removed.map(|node| node.into_inner(self.token))
+        let removed = self.remove_current_as_tree();
+        debug_assert!(removed.len(self.token) <= 1, "{} > 1", removed.len(self.token));
+
+        removed.root.map(|root| { TripodTree::node_into_inner(root, self.token) })
     }
 
-    /// Removes the current element from the tree and returns it as a `TripodNode`.
+    /// Removes the current element from the tree and returns it as a `TripodTree`.
     ///
     /// The removed element is returned, and the cursor is moved to point to the next element, if any.
     ///
@@ -999,16 +1096,20 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
     ///
     /// -   Time: O(log N) in the number of elements.
     /// -   Space: O(1).
-    pub fn remove_current_as_node(&mut self) -> Option<TripodNode<'brand, T>> {
+    ///
+    /// No memory allocation nor deallocation occur.
+    pub fn remove_current_as_tree(&mut self) -> TripodTree<'brand, T> {
         //  Short circuit if not interesting.
-        self.node.as_ref()?;
+        if self.node.is_none() {
+            return TripodTree::new();
+        }
 
-        self.describe_self("remove_current_as_node (begin)");
+        self.describe_self("remove_current_as_tree (begin)");
 
         //  Memorize index, to restore it.
         let index = self.index;
 
-        //  Push node down until it's a leaf in the deepest sub-tree, recursively.
+        //  Push node down until it's a leaf in the deepest sub-tree, recursively => O(log N).
         self.sift_down();
 
         //  Remove leaf, fixing up parents if any.
@@ -1031,7 +1132,8 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
                 self.index -= 1;
             }
 
-            self.rebalance_tree(parent_tripod);
+            //  O(log N).
+            self.rebalance_tree_single(parent_tripod);
 
             self.move_to(index);
 
@@ -1043,71 +1145,105 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
 
         self.retract_tripod(current_tripod);
 
-        self.describe_self("remove_current_as_node (end)");
+        self.describe_self("remove_current_as_tree (end)");
 
-        Some(TripodNode::from_quarter(current, self.token))
+        TripodTree::from_quarter(current, self.token)
     }
 
-    /// Inserts a new node in the tree after the current one.
+    /// Inserts a new tree in the tree after the current one.
     ///
     /// Although the cursor remains pointed to the same element, the position of the element may have changed
     /// drastically due to rebalancing.
     ///
-    /// If the cursor is pointing at the "twilight" non-element, then the new element is inserted at the front.
+    /// If the cursor is pointing at the "twilight" non-element, then the new tree is inserted at the front.
     ///
     /// #   Complexity
     ///
-    /// -   Time: O(log N) in the number of element.
+    /// -   Time: O(log N) in the number of elements.
     /// -   Space: O(1).
     ///
     /// No memory allocation nor deallocation occur.
-    pub fn splice_after(&mut self, node: TripodNode<'brand, T>) {
-        if self.tree.is_empty() {
-            self.tree.root = Some(node.0);
-            self.index = 1;
-            return;
-        }
-
-        //  We'll be getting back to this index. 
+    pub fn splice_after(&mut self, other: &mut TripodTree<'brand, T>) {
+        //  We'll be getting back to this index.
         let original = self.index();
 
-        self.splice_after_impl(node.0);
+        self.splice_impl(Side::Right, other);
 
         self.move_to(original.unwrap_or_else(|| self.len()));
 
         debug_assert_eq!(original, self.index());
     }
 
-    /// Inserts a new node in the tree before the current one.
+    /// Inserts a new tree in the tree before the current one.
     ///
     /// Although the cursor remains pointed to the same element, the position of the element may have changed
     /// drastically due to rebalancing.
     ///
-    /// If the cursor is pointing at the "twilight" non-element, then the new element is inserted at the back.
+    /// If the cursor is pointing at the "twilight" non-element, then the new tree is inserted at the back.
     ///
     /// #   Complexity
     ///
-    /// -   Time: O(log N) in the number of element.
+    /// -   Time: O(log N) in the number of elements.
     /// -   Space: O(1).
     ///
     /// No memory allocation nor deallocation occur.
-    pub fn splice_before(&mut self, node: TripodNode<'brand, T>) {
-        if self.tree.is_empty() {
-            self.tree.root = Some(node.0);
-            return;
-        }
-
-        //  We'll be getting back to this index. 
+    pub fn splice_before(&mut self, other: &mut TripodTree<'brand, T>) {
+        //  We'll be getting back to this index.
         let original = self.index();
+        let other_size = other.len(self.token);
 
-        self.splice_before_impl(node.0);
+        self.splice_impl(Side::Left, other);
 
-        self.move_to(original.map(|n| n + 1).unwrap_or_else(|| self.len()));
+        self.move_to(original.map(|n| n + other_size).unwrap_or_else(|| self.len()));
 
-        debug_assert_eq!(original.map(|n| n + 1), self.index());
+        debug_assert_eq!(original.map(|n| n + other_size), self.index());
     }
 
+    /// Splits the tree into two after the current element.
+    ///
+    /// Returns a tree consisting of everything after the current element.
+    ///
+    /// If the cursor is pointing at the "twilight" non-element, returns everything.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log² N) in the number of elements.
+    /// -   Space: O(1).
+    ///
+    /// No memory allocation nor deallocation occur.
+    pub fn split_after(&mut self) -> TripodTree<'brand, T> {
+        let result = self.split_impl(Side::Right);
+
+        self.move_to_back();
+
+        result
+    }
+
+    /// Splits the tree into two before the current element.
+    ///
+    /// Returns a tree consisting of everything before the current element.
+    ///
+    /// If the cursor is pointing at the "twilight" non-element, returns everything.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the number of elements.
+    /// -   Space: O(1).
+    ///
+    /// No memory allocation nor deallocation occur.
+    pub fn split_before(&mut self) -> TripodTree<'brand, T> {
+        let result = self.split_impl(Side::Left);
+
+        self.move_to_front();
+
+        result
+    }
+
+    //  Internal; sift down current index, until it's a leaf, by pushing it alongst the deepest path.
+    //
+    //  Complexity: Time O(log N), Space O(1).
     fn sift_down(&mut self) {
+        //  O(log N) iterations, each doing O(1) work.
         loop {
             let current_tripod = self.node.take().expect("Non-twilight");
 
@@ -1130,115 +1266,262 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
         }
     }
 
-    //  Internal; splice_after, without any guarantee with regard to the position of the index.
-    fn splice_after_impl(&mut self, node: QuarterNodePtr<'brand, T>) {
-        debug_assert!(self.len() > 0);
-
-        self.describe_self("splice_after_impl (begin)");
-
-        //  No root: place at the front.
-        if self.index().is_none() {
-            self.move_to_front();
-            self.set_child(Side::Left, node);
-            
-            self.describe_self("splice_after_impl (end) (twilight)");
-            return;
-        }
-
-        //  Otherwise, place at left-most child of right sub-tree.
-        if let Some(_) = self.try_move_right() {
-            while let Some(_) = self.try_move_left() {}
-
-            self.set_child(Side::Left, node);
-        } else {
-            //  Unless there's no right child.
-            self.set_child(Side::Right, node);
-        }
-        
-        self.describe_self("splice_after_impl (end)");
-    }
-    //  Internal; splice_before, without any guarantee with regard to the position of the index.
-    fn splice_before_impl(&mut self, node: QuarterNodePtr<'brand, T>) {
-        debug_assert!(self.len() > 0);
-
-        self.describe_self("splice_before_impl (begin)");
-
-        //  No root: place at the back.
-        if self.index().is_none() {
-            self.move_to_back();
-            self.set_child(Side::Right, node);
-            
-            self.describe_self("splice_before_impl (end) (twilight)");
-            return;
-        }
-
-        //  Otherwise, place at right-most child of left sub-tree.
-        if let Some(_) = self.try_move_left() {
-            while let Some(_) = self.try_move_right() {}
-
-            self.set_child(Side::Right, node);
-        } else {
-            //  Unless there's no left child.
-            self.set_child(Side::Left, node);
-        }
-
-        self.describe_self("splice_before_impl (end)");
-    }
-
-    //  Internal; sets the node as the child of the current node. Fixes up indexes and rebalances.
+    //  Internal; splice_before/after, without any guarantee with regard to the position of the index.
     //
-    //  There must be no such child.
-    fn set_child(&mut self, side: Side, child: QuarterNodePtr<'brand, T>) {
+    //  Complexity: Time O(log² N), Space O(1).
+    fn splice_impl(&mut self, side: Side, other: &mut TripodTree<'brand, T>) {
+        self.describe_self("splice_impl (begin)");
+
+        let other_root = if let Some(other_root) = other.root.take() {
+            other_root
+        } else {
+            self.describe_self("splice_impl (end) (empty)");
+            return;
+        };
+
+        if self.tree.is_empty() {
+            self.index = other_root.borrow(self.token).size;
+            self.tree.root = Some(other_root);
+            return;
+        }
+
+        let opposite = side.opposite();
+
+        //  No root.
+        if self.index().is_none() {
+            match side {
+                //  Place at the back.
+                Side::Left => self.move_to_back(),
+                //  Place at the front.
+                Side::Right => self.move_to_front(),
+            }
+
+            self.set_subtree(opposite, other_root);
+
+            self.describe_self("splice_impl (end) (twilight)");
+            return;
+        }
+
+        //  Otherwise, place at opposite-side-most child of side sub-tree.
+        if let Some(_) = self.try_move_down(side) {
+            while let Some(_) = self.try_move_down(opposite) {}
+
+            self.set_subtree(opposite, other_root);
+        } else {
+            //  Unless there's no side child.
+            self.set_subtree(side, other_root);
+        }
+
+        self.describe_self("splice_impl (end)");
+    }
+
+    //  Internal; splits the tree into two, taking all elements on the given side into the new tree.
+    //
+    //  Complexity: Time O(log² N), Space O(1).
+    fn split_impl(&mut self, side: Side) -> TripodTree<'brand, T> {
+        if self.node.is_none() {
+            self.index = 0;
+            return mem::replace(self.tree, TripodTree::new());
+        }
+
+        //  Special cases, taking a left-most or right-most sub-tree.
+        {
+            let node = self.node.as_ref().expect("Non-empty");
+
+            match side {
+                Side::Left if self.range().start == 0 => {
+                    let result = TripodTree { root: Self::take_child(side, node, self.token) };
+                    self.index = 0;
+
+                    let current_tripod = self.node.take().expect("Non-empty");
+                    self.rebalance_tree_single(current_tripod);
+
+                    return result;
+                },
+                Side::Right if self.range().end == self.len() => {
+                    let result = TripodTree { root: Self::take_child(side, node, self.token) };
+
+                    let current_tripod = self.node.take().expect("Non-empty");
+                    self.rebalance_tree_single(current_tripod);
+
+                    return result;
+                },
+                _ => (),
+            }
+        }
+
+        //  Computing which elements should go, and which shouldn't, is fairly complicated.
+        //
+        //  The one exception: when the current node is the root, then one side stays and one side goes!
+        //
+        //  So... we're going to have a simple plan:
+        //
+        //  1.  Make the current node root.
+        //      a.  Keep its children balanced.
+        //  2.  Strip off its `side` child, this is our tree.
+        //  3.  Repeatedly rebalance until the entire tree is balanced.
+        //  4.  Profit!
+
+        self.describe_self("split_impl (begin)");
+
+        //  1.  Make the current node root => O(log N), from O(log N) iterations each doing O(1) work.
+        while let Some(parent_side) = self.node.as_ref().and_then(|node| node.borrow(self.token).is_child(self.token)) {
+            self.move_up();
+
+            let parent_tripod = self.node.take().expect("Non-empty");
+            self.rotate_child_from(parent_side, parent_tripod);
+
+            //  a.  Keep its children balanced.
+            let parent = self.node.take().expect("Non-empty");
+
+            self.rebalance_child(Side::Left, &parent);
+            self.rebalance_child(Side::Right, &parent);
+
+            self.node = Some(parent);
+
+            self.describe_self("split_impl (post incremental rotation)");
+        }
+
+        self.describe_self("split_impl (pre split)");
+
+        //  2.  Strip off its `side` child => O(1).
+        let result = {
+            let node = self.node.as_ref().expect("Non-empty");
+
+            TripodTree { root: Self::take_child(side, node, self.token) }
+        };
+
+        if side == Side::Left {
+            debug_assert_eq!(result.len(self.token), self.index);
+            self.index = 0;
+        }
+
+        self.describe_self("split_impl (post split)");
+
+        //  3.  Repeatedly rebalance, until it's balanced => O(log N) iterations each doing O(log N) work.
+        let current_tripod = self.node.take().expect("Non-empty");
+        self.rebalance_subtree_complete(current_tripod);
+
+        result
+    }
+
+    //  Internal; sets the tree as the child of the current node. Fixes up indexes and rebalances.
+    //
+    //  Leaves the cursor pointing to the root.
+    //
+    //  Requirement: there must be not such child.
+    //
+    //  Complexity: Time O(log² N), Space O(1).
+    fn set_subtree(&mut self, side: Side, other_root: QuarterNodePtr<'brand, T>) {
         debug_assert!(self.node.is_some());
         debug_assert!(side == Side::Right || self.peek_left().is_none());
         debug_assert!(side == Side::Left || self.peek_right().is_none());
 
-        self.describe_self("set_child (begin)");
+        self.describe_self("set_subtree (begin)");
 
         let root_tripod = self.node.take().expect("Not empty");
-        let tripod = self.deploy_tripod(&child);
+        let other_tripod = self.deploy_tripod(&other_root);
+        let other_size = other_tripod.borrow(self.token).size;
 
-        let current = root_tripod.borrow_mut(self.token).replace_child(side, child).expect("Left child - pointing to self");
-        tripod.borrow_mut(self.token).up.replace(current);
+        let current = root_tripod.borrow_mut(self.token).replace_child(side, other_root).expect("Side child - pointing to self");
+        other_tripod.borrow_mut(self.token).up.replace(current);
 
-        self.retract_tripod(tripod);
+        self.retract_tripod(other_tripod);
 
-        root_tripod.borrow_mut(self.token).size += 1;
+        root_tripod.borrow_mut(self.token).size += other_size;
 
         if side == Side::Left {
-            self.index += 1;
+            self.index += other_size;
         }
 
-        self.rebalance_tree(root_tripod);
-        
+        self.rebalance_tree_complete(root_tripod);
+
         self.describe_self("set_child (end)");
     }
 
     //  Internal; rebalances the tree up to the root, adjusting the node size as it goes.
     //
     //  The cursor is left pointing to the root. The index is adjusted accordingly.
-    fn rebalance_tree(&mut self, root_tripod: QuarterNodePtr<'brand, T>) {
-        self.describe_node("rebalance_tree (begin)", &root_tripod);
+    //
+    //  Complexity: Time O(log² N), Space O(1).
+    fn rebalance_tree_complete(&mut self, root_tripod: QuarterNodePtr<'brand, T>) {
+        self.describe_node("rebalance_tree_complete (begin)", &root_tripod);
 
-        self.rebalance_subtree(root_tripod);
+        self.rebalance_subtree_complete(root_tripod);
 
+        //  O(log N) iterations of O(log N) complexity.
         while let Some(_) = self.try_move_up() {
-            self.describe_self("rebalance_tree (loop)");
+            self.describe_self("rebalance_tree_complete (loop)");
 
             let root_tripod = self.node.take().expect("Not empty");
 
             self.adjust_size(&root_tripod);
-            self.rebalance_subtree(root_tripod)
+            self.rebalance_subtree_complete(root_tripod)
         }
 
-        self.describe_self("rebalance_tree (end)");
+        self.describe_self("rebalance_tree_complete (end)");
+    }
+
+    //  Internal; rebalances the tree up to the root, of at most 1 single step, adjusting the node size as it goes.
+    //
+    //  The cursor is left pointing to the root. The index is adjusted accordingly.
+    //
+    //  Complexity: Time O(log N), Space O(1).
+    fn rebalance_tree_single(&mut self, root_tripod: QuarterNodePtr<'brand, T>) {
+        self.describe_node("rebalance_tree_single (begin)", &root_tripod);
+
+        self.rebalance_subtree_single(root_tripod);
+
+        while let Some(_) = self.try_move_up() {
+            self.describe_self("rebalance_tree_single (loop)");
+
+            let root_tripod = self.node.take().expect("Not empty");
+
+            self.adjust_size(&root_tripod);
+            self.rebalance_subtree_single(root_tripod)
+        }
+
+        self.describe_self("rebalance_tree_single (end)");
     }
 
     //  Internal; rebalances the current sub-tree, if necessary.
     //
     //  The cursor is left pointing at the root of the sub-tree, whether it changed or not. The index is adjusted
     //  accordingly.
-    fn rebalance_subtree(&mut self, root_tripod: QuarterNodePtr<'brand, T>) {
+    //
+    //  Complexity: Time O(log N), Space O(1).
+    fn rebalance_subtree_complete(&mut self, mut root_tripod: QuarterNodePtr<'brand, T>) {
+        self.describe_node("rebalance_subtree_complete (begin)", &root_tripod);
+
+        let mut previous_index = self.index;
+
+        loop {
+            self.rebalance_subtree_single(root_tripod);
+
+            if previous_index == self.index {
+                break;
+            }
+
+            previous_index = self.index;
+
+            root_tripod = self.node.take().expect("Non-empty");
+
+            self.rebalance_child(Side::Left, &root_tripod);
+            self.rebalance_child(Side::Right, &root_tripod);
+
+            self.describe_node("rebalance_subtree_complete (loop)", &root_tripod);
+        }
+
+        self.describe_self("rebalance_subtree_complete (end)");
+    }
+
+    //  Internal; rebalances the current sub-tree by 1 single step, if necessary.
+    //
+    //  The cursor is left pointing at the root of the sub-tree, whether it changed or not. The index is adjusted
+    //  accordingly.
+    //
+    //  Complexity: Time O(1), Space O(1).
+    fn rebalance_subtree_single(&mut self, root_tripod: QuarterNodePtr<'brand, T>) {
         debug_assert!(self.node.is_none());
 
         let left_size = root_tripod.borrow(self.token).left_size(self.token);
@@ -1252,6 +1535,32 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
             self.rotate_child_from(Side::Right, root_tripod);
         } else {
             self.node = Some(root_tripod);
+        }
+    }
+
+    //  Internal; rebalances the parent's child on the designated side.
+    //
+    //  Complexity: Time O(1), Space O(1).
+    fn rebalance_child(&mut self, side: Side, parent: &GhostNode<'brand, T>) {
+        if let Some(child) = parent.borrow_mut(self.token).take_child(side) {
+            let child_tripod = child.borrow(self.token).deploy();
+            let child_index = child_tripod.borrow(self.token).index(self.token);
+            let parent_from_child = child_tripod.borrow_mut(self.token).up.take();
+
+            let mut tree = TripodTree { root: Some(child) };
+
+            let child_tripod = {
+                let mut cursor = CursorMut { token: self.token, tree: &mut tree, node: None, index: child_index };
+                cursor.rebalance_subtree_single(child_tripod);
+                cursor.node.take().expect("Non-empty")
+            };
+
+            let child = tree.root.take().expect("Non-empty");
+
+            child.borrow(self.token).retract(child_tripod);
+            child.borrow_mut(self.token).up = parent_from_child;
+
+            parent.borrow_mut(self.token).set_child(side, child);
         }
     }
 
@@ -1285,6 +1594,8 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
     //  -   Pa: Parent, potentially tree.root.
     //  -   Root: the current root of the sub-tree.
     //  -   Piv: the pivot, or future root of the sub-tree post-rotation.
+    //
+    //  Complexity: Time O(1), Space O(1).
     fn swap_child_from(&mut self, side: Side, root_tripod: QuarterNodePtr<'brand, T>) {
         debug_assert!(self.node.is_none());
 
@@ -1383,13 +1694,13 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
         };
 
         self.switch_tripod(Some(root_tripod), new_index);
-        
+
         self.describe_self("swap_child_from (end)");
     }
 
     //  Internal; rotates the current sub-tree so that the selected child becomes the root.
     //
-    //  The cursor is left pointing at the new root of the sub-tree, the index is adjusted accordingly.
+    //  The cursor is left pointing at the new root of the sub-tree (pivot), the index is adjusted accordingly.
     //
     //  Invoked with Side::Left:
     //
@@ -1418,9 +1729,11 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
     //  -   Root: the current root of the sub-tree.
     //  -   Piv: the pivot, or future root of the sub-tree post-rotation.
     //  -   Piv.OS: the child of the pivot, on the opposite side.
+    //
+    //  Complexity: Time O(1), Space O(1).
     fn rotate_child_from(&mut self, side: Side, root_tripod: QuarterNodePtr<'brand, T>) {
         debug_assert!(self.node.is_none());
-        
+
         self.describe_node("rotate_child_from (begin)", &root_tripod);
 
         let opposite = side.opposite();
@@ -1478,7 +1791,8 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
         self.adjust_size(&pivot_tripod);
 
         let index = {
-            let opposite_size = root_tripod.borrow(self.token).child_size(opposite, self.token);
+            //  Piv.OS size.
+            let opposite_size = root_tripod.borrow(self.token).child_size(side, self.token);
 
             match side {
                 Side::Left => self.index - 1 - opposite_size,
@@ -1511,6 +1825,8 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
     //
     //  Hence, if necessary, a rotation must be performed to ensure that the pivot "side" child is the root of the
     //  deepest sub-tree prior to doing the main rotation.
+    //
+    //  Complexity: Time O(1), Space O(1).
     fn prepare_rotation(&mut self, side: Side, root_tripod: QuarterNodePtr<'brand, T>) -> QuarterNodePtr<'brand, T> {
         debug_assert!(self.node.is_none());
 
@@ -1551,19 +1867,36 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
             root_tripod
         } else {
             self.describe_node("prepare_rotation (end) (passthrough)", &root_tripod);
-    
+
             root_tripod
         }
     }
-    
+
     //  Internal; adjusts the size of the node by adding up the size of its children.
+    //
+    //  Complexity: Time O(1), Space O(1).
     fn adjust_size(&mut self, node: &GhostNode<'brand, T>) {
         let left_size = node.borrow(self.token).left_size(self.token);
         let right_size = node.borrow(self.token).right_size(self.token);
 
         node.borrow_mut(self.token).size = 1 + left_size + right_size;
 
-        self.describe_node("adjust_size", node);
+        self.describe_node("adjust_size (adjusted)", node);
+    }
+
+    //  Internal; pops of the specified child, if any, adjusting size and pointers.
+    //
+    //  Complexity: Time O(1), Space O(1).
+    fn take_child(side: Side, node: &GhostNode<'brand, T>, token: &mut GhostToken<'brand>) -> Option<QuarterNodePtr<'brand, T>> {
+        let child = node.borrow_mut(token).take_child(side)?;
+
+        let node_from_child = child.borrow_mut(token).up.take().expect("child.up == node");
+        node.borrow_mut(token).set_child(side, node_from_child);
+
+        let child_size = child.borrow(token).size;
+        node.borrow_mut(token).size -= child_size;
+
+        Some(child)
     }
 }
 
@@ -2077,7 +2410,7 @@ fn cursor_mut_move_to_self() {
         for index in 0..POSITIONS.len() {
             cursor.move_to(index);
             assert_position_mut(POSITIONS[index], &mut cursor);
-            
+
             cursor.move_to(index);
             assert_position_mut(POSITIONS[index], &mut cursor);
         }
@@ -2461,6 +2794,407 @@ fn cursor_mut_insert_as_leaf() {
 
         assert_tree(&["8", "4", "C", "2", "6", "A", "E", "1", "3", "5", "7", "9", "B", "D", "F"], cursor.as_cursor());
     });
+}
+
+#[test]
+fn cursor_mut_splice_empty() {
+    const HEX: &[&str] = &["8", "4", "C", "2", "6", "A", "E", "1", "3", "5", "7", "9", "B", "D", "F"];
+
+    with_tree_duo(&[], &[], |token, tree, splice| {
+        eprintln!("===== Splice After Empty in Empty =====");
+
+        {
+            let mut cursor = tree.cursor_mut(token);
+
+            cursor.splice_after(splice);
+
+            assert_twilight(cursor.as_cursor());
+            assert_tree(&[], cursor.as_cursor());
+        }
+
+        assert_tree(&[], splice.cursor(token));
+    });
+
+    with_tree_duo(&[], &[], |token, tree, splice| {
+        eprintln!("===== Splice Before Empty in Empty =====");
+
+        {
+            let mut cursor = tree.cursor_mut(token);
+
+            cursor.splice_before(splice);
+
+            assert_twilight(cursor.as_cursor());
+            assert_tree(&[], cursor.as_cursor());
+        }
+
+        assert_tree(&[], splice.cursor(token));
+    });
+
+    with_tree_duo(&[], HEX, |token, tree, splice| {
+        eprintln!("===== Splice After HEX in Empty =====");
+
+        {
+            let mut cursor = tree.cursor_mut(token);
+
+            cursor.splice_after(splice);
+
+            assert_twilight(cursor.as_cursor());
+            assert_tree(HEX, cursor.as_cursor());
+        }
+
+        assert_tree(&[], splice.cursor(token));
+    });
+
+    with_tree_duo(&[], HEX, |token, tree, splice| {
+        eprintln!("===== Splice Before HEX in Empty =====");
+
+        {
+            let mut cursor = tree.cursor_mut(token);
+
+            cursor.splice_before(splice);
+
+            assert_twilight(cursor.as_cursor());
+            assert_tree(HEX, cursor.as_cursor());
+        }
+
+        assert_tree(&[], splice.cursor(token));
+    });
+}
+
+#[test]
+fn cursor_mut_splice_twilight() {
+    const HEX: &[&str] = &["8", "4", "C", "2", "6", "A", "E", "1", "3", "5", "7", "9", "B", "D", "F"];
+    const FIRST_HALF_HEX: &[&str] = &["4", "2", "6", "1", "3", "5", "7"];
+    const SECOND_HALF_HEX: &[&str] = &["C", "9", "E", "8", "A", "D", "F", "-", "-", "B"];
+
+    with_tree_duo(HEX, &[], |token, tree, splice| {
+        eprintln!("===== Splice After Empty in HEX =====");
+
+        {
+            let mut cursor = tree.cursor_mut(token);
+            cursor.move_up();
+
+            cursor.splice_after(splice);
+
+            assert_twilight(cursor.as_cursor());
+            assert_tree(HEX, cursor.as_cursor());
+        }
+
+        assert_tree(&[], splice.cursor(token));
+    });
+
+    with_tree_duo(HEX, &[], |token, tree, splice| {
+        eprintln!("===== Splice Before Empty in HEX =====");
+
+        {
+            let mut cursor = tree.cursor_mut(token);
+            cursor.move_up();
+
+            cursor.splice_before(splice);
+
+            assert_twilight(cursor.as_cursor());
+            assert_tree(HEX, cursor.as_cursor());
+        }
+
+        assert_tree(&[], splice.cursor(token));
+    });
+
+    with_tree_duo(SECOND_HALF_HEX, FIRST_HALF_HEX, |token, tree, splice| {
+        //                 9
+        //         4               C
+        //     2        6      A       E
+        //   1   3   5   8   B   -   D   F
+        //  - - - - - - 7 - - - - - - - - -
+        const RESULT: &[&str] = &["9", "4", "C", "2", "6", "A", "E", "1", "3", "5", "8", "B", "-", "D", "F", "-", "-", "-", "-", "-", "-", "7"];
+
+        eprintln!("===== Splice After First in Second =====");
+
+        {
+            let mut cursor = tree.cursor_mut(token);
+            cursor.move_up();
+
+            cursor.splice_after(splice);
+
+            assert_twilight(cursor.as_cursor());
+            assert_tree(RESULT, cursor.as_cursor());
+        }
+
+        assert_tree(&[], splice.cursor(token));
+    });
+
+    with_tree_duo(FIRST_HALF_HEX, SECOND_HALF_HEX, |token, tree, splice| {
+        //                 9
+        //         4               C
+        //     2       6       A       E
+        //   1   3   5   7   B   -   D   F
+        //  - - - - - - - 8 - - - - - - - -
+        const RESULT: &[&str] = &["9", "4", "C", "2", "6", "A", "E", "1", "3", "5", "7", "B", "-", "D", "F", "-", "-", "-", "-", "-", "-", "-", "8"];
+
+        eprintln!("===== Splice Before Second in First =====");
+
+        {
+            let mut cursor = tree.cursor_mut(token);
+            cursor.move_up();
+
+            cursor.splice_before(splice);
+
+            assert_twilight(cursor.as_cursor());
+            assert_tree(RESULT, cursor.as_cursor());
+        }
+
+        assert_tree(&[], splice.cursor(token));
+    });
+}
+
+#[test]
+fn cursor_mut_splice_after() {
+    const ORIGINAL: &[&str] = &["D", "B", "F", "A", "C", "E", "G"];
+    const SPLICE: &[&str] = &["4", "2", "6", "1", "3", "5", "7"];
+
+    const RESULTS: &[&[&str]] = &[
+        //                 4
+        //         2               D
+        //     A       3       B       F
+        //   -   1   -   -   6   C   E   G
+        //  - - - - - - - - 5 7 - - - - - -
+        &["4", "2", "D", "A", "3", "B", "F", "-", "1", "-", "-", "6", "C", "E", "G", "-", "-", "-", "-", "-", "-", "-", "-", "5", "7"],
+        //                 4
+        //         B               D
+        //     A       2       6       F
+        //   -   -   1   3   5   C   E   G
+        //  - - - - - - - - - - 7 - - - - -
+        &["4", "B", "D", "A", "2", "6", "F", "-", "-", "1", "3", "5", "C", "E", "G", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "7"],
+        //         4
+        //     C       D
+        //   B   2   6   F
+        //  A - 1 3 5 7 E G
+        &["4", "C", "D", "B", "2", "6", "F", "A", "-", "1", "3", "5", "7", "E", "G"],
+        //         4
+        //     D       E
+        //   B   2   6   F
+        //  A C 1 3 5 7 - G
+        &["4", "D", "E", "B", "2", "6", "F", "A", "C", "1", "3", "5", "7", "-", "G"],
+        //                 4
+        //         D               F
+        //     B       2       6       G
+        //   A   C   E   3   5   7   -   -
+        //  - - - - - 1 - - - - - - - - - -
+        &["4", "D", "F", "B", "2", "6", "G", "A", "C", "E", "3", "5", "7", "-", "-", "-", "-", "-", "-", "-", "1"],
+        //                 4
+        //         D               6
+        //     B       F       5       G
+        //   A   C   E   2   -   -   7   -
+        //  - - - - - - 1 3 - - - - - - - -
+        &["4", "D", "6", "B", "F", "5", "G", "A", "C", "E", "2", "-", "-", "7", "-", "-", "-", "-", "-", "-", "-", "1", "3"],
+        //         G
+        //     D       4
+        //   B   F   2   6
+        //  A C E - 1 3 5 7
+        &["G", "D", "4", "B", "F", "2", "6", "A", "C", "E", "-", "1", "3", "5", "7"],
+    ];
+
+    for index in 0..ORIGINAL.len() {
+        eprintln!("===== Splice After {} =====", index);
+
+        with_tree_duo(ORIGINAL, SPLICE, |token, tree, splice| {
+            {
+                let mut cursor = tree.cursor_mut(token);
+                cursor.move_to(index);
+
+                cursor.splice_after(splice);
+
+                assert_eq!(Some(index), cursor.index());
+                assert_tree(&RESULTS[index], cursor.as_cursor());
+            }
+
+            assert_tree(&[], splice.cursor(token));
+        });
+    }
+}
+
+#[test]
+fn cursor_mut_splice_before() {
+    const ORIGINAL: &[&str] = &["D", "B", "F", "A", "C", "E", "G"];
+    const SPLICE: &[&str] = &["4", "2", "6", "1", "3", "5", "7"];
+
+    const RESULTS: &[&[&str]] = &[
+        //         A
+        //     4       D
+        //   2   6   B   F
+        //  1 3 5 7 - C E G
+        &["A", "4", "D", "2", "6", "B", "F", "1", "3", "5", "7", "-", "C", "E", "G"],
+        //                 4
+        //         2               D
+        //     A       3       B       F
+        //   -   1   -   -   6   C   E   G
+        //  - - - - - - - - 5 7 - - - - - -
+        &["4", "2", "D", "A", "3", "B", "F", "-", "1", "-", "-", "6", "C", "E", "G", "-", "-", "-", "-", "-", "-", "-", "-", "5", "7"],
+        //                 4
+        //         B               D
+        //     A       2       6       F
+        //   -   -   1   3   5   C   E   G
+        //  - - - - - - - - - - 7 - - - - -
+        &["4", "B", "D", "A", "2", "6", "F", "-", "-", "1", "3", "5", "C", "E", "G", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "7"],
+        //         4
+        //     C       D
+        //   B   2   6   F
+        //  A - 1 3 5 7 E G
+        &["4", "C", "D", "B", "2", "6", "F", "A", "-", "1", "3", "5", "7", "E", "G"],
+        //         4
+        //     D       E
+        //   B   2   6   F
+        //  A C 1 3 5 7 - G
+        &["4", "D", "E", "B", "2", "6", "F", "A", "C", "1", "3", "5", "7", "-", "G"],
+        //                 4
+        //         D               F
+        //     B       2       6       G
+        //   A   C   E   3   5   7   -   -
+        //  - - - - - 1 - - - - - - - - - -
+        &["4", "D", "F", "B", "2", "6", "G", "A", "C", "E", "3", "5", "7", "-", "-", "-", "-", "-", "-", "-", "1"],
+        //                 4
+        //         D               6
+        //     B       F       5       G
+        //   A   C   E   2   -   -   7   -
+        //  - - - - - 1 3 - - - - - - - - -
+        &["4", "D", "6", "B", "F", "5", "G", "A", "C", "E", "2", "-", "-", "7", "-", "-", "-", "-", "-", "-", "-", "1", "3"],
+    ];
+
+    for index in 0..ORIGINAL.len() {
+        eprintln!("===== Splice Before {} =====", index);
+
+        with_tree_duo(ORIGINAL, SPLICE, |token, tree, splice| {
+            {
+                let mut cursor = tree.cursor_mut(token);
+                cursor.move_to(index);
+
+                cursor.splice_before(splice);
+
+                assert_eq!(Some(index + SPLICE.len()), cursor.index());
+                assert_tree(&RESULTS[index], cursor.as_cursor());
+            }
+
+            assert_tree(&[], splice.cursor(token));
+        });
+    }
+}
+
+#[test]
+fn cursor_mut_split_twilight() {
+    const ORIGINAL: &[&str] = &["8", "4", "C", "2", "6", "A", "E", "1", "3", "5", "7", "9", "B", "D", "F"];
+
+    with_tree_duo(ORIGINAL, &[], |token, tree, split| {
+        eprintln!("===== Split After =====");
+
+        {
+            let mut cursor = tree.cursor_mut(token);
+            cursor.move_up();
+
+            *split = cursor.split_after();
+
+            assert_twilight(cursor.as_cursor());
+            assert_tree(&[], cursor.as_cursor());
+        }
+
+        assert_tree(ORIGINAL, split.cursor(token));
+    });
+
+    with_tree_duo(ORIGINAL, &[], |token, tree, split| {
+        eprintln!("===== Split Before =====");
+
+        {
+            let mut cursor = tree.cursor_mut(token);
+            cursor.move_up();
+
+            *split = cursor.split_before();
+
+            assert_twilight(cursor.as_cursor());
+            assert_tree(&[], cursor.as_cursor());
+        }
+
+        assert_tree(ORIGINAL, split.cursor(token));
+    });
+}
+
+#[test]
+fn cursor_mut_split_after() {
+    const ORIGINAL: &[&str] = &["8", "4", "C", "2", "6", "A", "E", "1", "3", "5", "7", "9", "B", "D", "F"];
+
+    const SPLITS: &[(&[&str], &[&str])] = &[
+        (&["1"], &["8", "4", "C", "2", "6", "A", "E", "-", "3", "5", "7", "9", "B", "D", "F"]),
+        (&["2", "1"], &["8", "4", "C", "3", "6", "A", "E", "-", "-", "5", "7", "9", "B", "D", "F"]),
+        (&["2", "1", "3"], &["8", "6", "C", "4", "7", "A", "E", "-", "5", "-", "-", "9", "B", "D", "F"]),
+        (&["2", "1", "4", "-", "-", "3"], &["8", "6", "C", "5", "7", "A", "E", "-", "-", "-", "-", "9", "B", "D", "F"]),
+        (&["4", "2", "5", "1", "3"], &["C", "8", "E", "6", "A", "D", "F", "-", "7", "9", "B"]),
+        (&["4", "2", "6", "1", "3", "5"], &["C", "8", "E", "7", "A", "D", "F", "-", "-", "9", "B"]),
+        (&["4", "2", "6", "1", "3", "5", "7"], &["C", "8", "E", "-", "A", "D", "F", "-", "-", "9", "B"]),
+        (&["4", "2", "8", "1", "3", "6", "-", "-", "-", "-", "-", "5", "7"], &["C", "A", "E", "9", "B", "D", "F"]),
+        (&["4", "2", "8", "1", "3", "6", "9", "-", "-", "-", "-", "5", "7"], &["C", "A", "E", "-", "B", "D", "F"]),
+        (&["4", "2", "8", "1", "3", "6", "A", "-", "-", "-", "-", "5", "7", "9"], &["C", "B", "E", "-", "-", "D", "F"]),
+        (&["8", "4", "A", "2", "6", "9", "B", "1", "3", "5", "7"], &["E", "C", "F", "-", "D"]),
+        (&["8", "4", "A", "2", "6", "9", "C", "1", "3", "5", "7", "-", "-", "B"], &["E", "D", "F"]),
+        (&["8", "4", "C", "2", "6", "A", "D", "1", "3", "5", "7", "9", "B"], &["E", "-", "F"]),
+        (&["8", "4", "C", "2", "6", "A", "E", "1", "3", "5", "7", "9", "B", "D"], &["F"]),
+        (ORIGINAL, &[]),
+    ];
+
+    for (index, (remainder, castaway)) in SPLITS.iter().enumerate() {
+        eprintln!("===== Split After {} =====", index);
+
+        with_tree_duo(ORIGINAL, &[], |token, tree, split| {
+            {
+                let mut cursor = tree.cursor_mut(token);
+                cursor.move_to(index);
+
+                *split = cursor.split_after();
+
+                assert_eq!(Some(index), cursor.index());
+                assert_tree(remainder, cursor.as_cursor());
+            }
+
+            assert_tree(castaway, split.cursor(token));
+        });
+    }
+}
+
+#[test]
+fn cursor_mut_split_before() {
+    const ORIGINAL: &[&str] = &["8", "4", "C", "2", "6", "A", "E", "1", "3", "5", "7", "9", "B", "D", "F"];
+
+    const SPLITS: &[(&[&str], &[&str])] = &[
+        (ORIGINAL, &[]),
+        (&["8", "4", "C", "2", "6", "A", "E", "-", "3", "5", "7", "9", "B", "D", "F"], &["1"]),
+        (&["8", "4", "C", "3", "6", "A", "E", "-", "-", "5", "7", "9", "B", "D", "F"], &["2", "1"]),
+        (&["8", "6", "C", "4", "7", "A", "E", "-", "5", "-", "-", "9", "B", "D", "F"], &["2", "1", "3"]),
+        (&["8", "6", "C", "5", "7", "A", "E", "-", "-", "-", "-", "9", "B", "D", "F"], &["2", "1", "4", "-", "-", "3"]),
+        (&["C", "8", "E", "6", "A", "D", "F", "-", "7", "9", "B"], &["4", "2", "5", "1", "3"]),
+        (&["C", "8", "E", "7", "A", "D", "F", "-", "-", "9", "B"], &["4", "2", "6", "1", "3", "5"]),
+        (&["C", "8", "E", "-", "A", "D", "F", "-", "-", "9", "B"], &["4", "2", "6", "1", "3", "5", "7"]),
+        (&["C", "A", "E", "9", "B", "D", "F"], &["4", "2", "8", "1", "3", "6", "-", "-", "-", "-", "-", "5", "7"]),
+        (&["C", "A", "E", "-", "B", "D", "F"], &["4", "2", "8", "1", "3", "6", "9", "-", "-", "-", "-", "5", "7"]),
+        (&["C", "B", "E", "-", "-", "D", "F"], &["4", "2", "8", "1", "3", "6", "A", "-", "-", "-", "-", "5", "7", "9"]),
+        (&["E", "C", "F", "-", "D"], &["8", "4", "A", "2", "6", "9", "B", "1", "3", "5", "7"]),
+        (&["E", "D", "F"], &["8", "4", "A", "2", "6", "9", "C", "1", "3", "5", "7", "-", "-", "B"]),
+        (&["E", "-", "F"], &["8", "4", "C", "2", "6", "A", "D", "1", "3", "5", "7", "9", "B"]),
+        (&["F"], &["8", "4", "C", "2", "6", "A", "E", "1", "3", "5", "7", "9", "B", "D"]),
+    ];
+
+    for (index, (remainder, castaway)) in SPLITS.iter().enumerate() {
+        eprintln!("===== Split Before {} =====", index);
+
+        with_tree_duo(ORIGINAL, &[], |token, tree, split| {
+            {
+                let mut cursor = tree.cursor_mut(token);
+                cursor.move_to(index);
+
+                *split = cursor.split_before();
+
+                assert_eq!(Some(0), cursor.index());
+                assert_tree(remainder, cursor.as_cursor());
+            }
+
+            assert_tree(castaway, split.cursor(token));
+        });
+    }
 }
 
 } // mod tests

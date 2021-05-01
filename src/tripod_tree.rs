@@ -8,8 +8,7 @@
 //! -   Indexing: each element in the tree is indexed by a number in [0, N), where N is the number of elements,
 //!     according to their order.
 //!
-//! The `TripodTree`, however, does not by itself establish any order. Typically, trees built atop it will establish an
-//! order on their own.
+//! The `TripodTree`, however, does not by itself establish any order, it simply preserves the order of insertion.
 
 mod cursor;
 mod iter;
@@ -22,73 +21,6 @@ use core::cell::Cell;
 use ghost_cell::{GhostCell, GhostToken};
 use static_rc::StaticRc;
 
-/// A node of a TripodTree, extracted from its tree.
-pub struct TripodNode<'brand, T>(QuarterNodePtr<'brand, T>);
-
-impl<'brand, T> TripodNode<'brand, T> {
-    /// Creates a new instance.
-    pub fn new(value: T, token: &mut GhostToken<'brand>) -> Self {
-        let tripod = Cell::new(None);
-        let node = FullNodePtr::new(GhostCell::new(Node { size: 1, value, up: None, left: None, right: None, tripod, }));
-
-        let halves = FullNodePtr::split::<2, 2>(node);
-        let (up, tripod) = HalfNodePtr::split::<1, 1>(halves.0);
-        let (left, right) = HalfNodePtr::split::<1, 1>(halves.1);
-
-        up.borrow(token).retract(tripod);
-        up.borrow_mut(token).left = Some(left);
-        up.borrow_mut(token).right = Some(right);
-
-        Self::from_quarter(up, token)
-    }
-
-    /// Returns the value contained within.
-    ///
-    /// Note: this cannot be an implementation of `Drop` due to the requirement of passing the token.
-    pub fn into_inner(self, token: &mut GhostToken<'brand>) -> T {
-        let full = self.into_full(token);
-
-        Self::full_inner(full)
-    }
-
-    //  Construct from QuarterNodePtr.
-    fn from_quarter(node: QuarterNodePtr<'brand, T>, token: &GhostToken<'brand>) -> Self {
-        let _node = node.borrow(token);
-        debug_assert!(_node.up.is_none());
-        debug_assert!(_node.is_aliased(_node.left.as_ref().map(|node| &**node)));
-        debug_assert!(_node.is_aliased(_node.right.as_ref().map(|node| &**node)));
-        //  Can't check tripod without writes.
-
-        Self(node)
-    }
-
-    //  Returns the full pointer.
-    fn into_full(self, token: &mut GhostToken<'brand>) -> FullNodePtr<'brand, T> {
-        let left = self.0.borrow_mut(token).left.take().expect("Left child - pointing to self");
-        let right = self.0.borrow_mut(token).right.take().expect("Right child - pointing to self");
-        let tripod = self.0.borrow_mut(token).tripod.take().expect("Tripod - pointing to self");
-
-        let main = HalfNodePtr::join(self.0, tripod);
-        let children = HalfNodePtr::join(left, right);
-
-        FullNodePtr::join(main, children)
-    }
-
-    //  Returns the value contained within.
-    fn full_inner(full: FullNodePtr<'brand, T>) -> T {
-        let ghost_cell = FullNodePtr::into_inner(full);
-        let node = GhostNode::into_inner(ghost_cell);
-
-        //  If the node still has a prev and next, they are leaked.
-        debug_assert!(node.up.is_none());
-        debug_assert!(node.left.is_none());
-        debug_assert!(node.right.is_none());
-        debug_assert!(node.tripod.replace(None).is_none());
-
-        node.value
-    }
-}
-
 /// A safe implementation of an indexed balanced binary tree.
 ///
 /// Each node contains 1 element as well as 4 pointers: up, left, right, and the tripod pointer.
@@ -99,6 +31,11 @@ pub struct TripodTree<'brand, T> {
 impl<'brand, T> TripodTree<'brand, T> {
     /// Creates a new, empty, instance.
     pub const fn new() -> Self { Self { root: None, } }
+
+    /// Creates a new instance, with a single value.
+    pub fn singleton(value: T, token: &mut GhostToken<'brand>) -> Self {
+        Self { root: Some(Self::from_value(value, token)) }
+    }
 
     /// Creates an iterator pointing to the front element.
     pub fn iter<'a>(&'a self, token: &'a GhostToken<'brand>) -> Iter<'a, 'brand, T> {
@@ -180,16 +117,75 @@ impl<'brand, T> TripodTree<'brand, T> {
                     let child = up_tripod.borrow_mut(token).replace_child(side, up).expect("Child!");
 
                     retract(tripod, token);
-                    TripodNode(child).into_inner(token);
+                    Self::node_into_inner(child, token);
 
                     tripod = up_tripod;
                 } else {
                     retract(tripod, token);
-                    TripodNode(root).into_inner(token);
+                    Self::node_into_inner(root, token);
                     break;
                 }
             }
         }
+    }
+
+    //  Internal; constructs a QuarterNodePtr from a value.
+    fn from_value(value: T, token: &mut GhostToken<'brand>) -> QuarterNodePtr<'brand, T> {
+        let tripod = Cell::new(None);
+        let node = FullNodePtr::new(GhostCell::new(Node { size: 1, value, up: None, left: None, right: None, tripod, }));
+
+        let halves = FullNodePtr::split::<2, 2>(node);
+        let (up, tripod) = HalfNodePtr::split::<1, 1>(halves.0);
+        let (left, right) = HalfNodePtr::split::<1, 1>(halves.1);
+
+        up.borrow(token).retract(tripod);
+        up.borrow_mut(token).left = Some(left);
+        up.borrow_mut(token).right = Some(right);
+
+        up
+    }
+
+    //  Internal; construct a Tree from QuarterNodePtr.
+    fn from_quarter(node: QuarterNodePtr<'brand, T>, token: &GhostToken<'brand>) -> Self {
+        let _node = node.borrow(token);
+        debug_assert!(_node.up.is_none());
+        debug_assert!(_node.is_aliased(_node.left.as_ref().map(|node| &**node)));
+        debug_assert!(_node.is_aliased(_node.right.as_ref().map(|node| &**node)));
+
+        Self { root: Some(node), }
+    }
+
+    //  Internal;  returns the value contained within.
+    fn node_into_inner(node: QuarterNodePtr<'brand, T>, token: &mut GhostToken<'brand>) -> T {
+        let full = Self::node_into_full(node, token);
+
+        Self::full_into_inner(full)
+    }
+    
+    //  Internal; returns the full pointer.
+    fn node_into_full(node: QuarterNodePtr<'brand, T>, token: &mut GhostToken<'brand>) -> FullNodePtr<'brand, T> {
+        let left = node.borrow_mut(token).left.take().expect("Left child - pointing to self");
+        let right = node.borrow_mut(token).right.take().expect("Right child - pointing to self");
+        let tripod = node.borrow_mut(token).tripod.take().expect("Tripod - pointing to self");
+
+        let main = HalfNodePtr::join(node, tripod);
+        let children = HalfNodePtr::join(left, right);
+
+        FullNodePtr::join(main, children)
+    }
+
+    //  Internal; returns the value contained within.
+    fn full_into_inner(full: FullNodePtr<'brand, T>) -> T {
+        let ghost_cell = FullNodePtr::into_inner(full);
+        let node = GhostNode::into_inner(ghost_cell);
+
+        //  If the node still has a prev and next, they are leaked.
+        debug_assert!(node.up.is_none());
+        debug_assert!(node.left.is_none());
+        debug_assert!(node.right.is_none());
+        debug_assert!(node.tripod.replace(None).is_none());
+
+        node.value
     }
 }
 
@@ -197,24 +193,28 @@ impl<'brand, T> Default for TripodTree<'brand, T> {
     fn default() -> Self { Self::new() }
 }
 
-//
-//  Implementation
-//
-
+/// The side of a child.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum Side {
+pub enum Side {
+    /// The left-side child, all elements on the left-side are "before" the parent node.
     Left,
+    /// The right-side child, all elements on the right-side are "after" the parent node.
     Right,
 }
 
 impl Side {
-    fn opposite(self) -> Side {
+    /// The opposite side.
+    pub fn opposite(self) -> Side {
         match self {
             Side::Left => Side::Right,
             Side::Right => Side::Left,
         }
     }
 }
+
+//
+//  Implementation
+//
 
 struct Node<'brand, T> {
     //  The size of the subtree rooted at this node.
@@ -253,6 +253,11 @@ impl<'brand, T> Node<'brand, T> {
     //  Internal; checks whether a referecen to a node is aliased to another.
     fn is_aliased(&self, node: Option<&GhostNode<'brand, T>>) -> bool {
         node.map(|node| self as *const _ as *const u8 == node as *const _ as *const u8).unwrap_or(false)
+    }
+
+    //  Internal; retunrns whether hte node is a child, and on which side.
+    fn is_child(&self, token: &GhostToken<'brand>) -> Option<Side> {
+        self.up.as_ref().and_then(|parent| self.is_child_of(parent.borrow(token)))
     }
 
     //  Internal; returns whether the node is a child, and which.
@@ -357,7 +362,7 @@ type FullNodePtr<'brand, T> = StaticRc<GhostNode<'brand, T>, 4, 4>;
 mod tests {
 
 use std::panic::{self, AssertUnwindSafe};
-    
+
 use super::*;
 
 #[track_caller]
@@ -404,6 +409,23 @@ where
     })
 }
 
+pub(super) fn with_tree_duo<R, F>(first: &[&str], second: &[&str], fun: F) -> R
+where
+    F: for<'brand> FnOnce(&mut GhostToken<'brand>, &mut TripodTree<'brand, String>, &mut TripodTree<'brand, String>) -> R,
+{
+    GhostToken::new(|mut token| {
+        let mut first = inflate(first, &mut token);
+        let mut second = inflate(second, &mut token);
+
+        let result = panic::catch_unwind(AssertUnwindSafe(|| fun(&mut token, &mut first, &mut second)));
+
+        first.clear(&mut token);
+        second.clear(&mut token);
+
+        result.expect("No Panic")
+    })
+}
+
 pub(super) fn inflate<'brand>(flat: &[&str], token: &mut GhostToken<'brand>) -> TripodTree<'brand, String> {
     fn set_child<'brand>(
         node: &QuarterNodePtr<'brand, String>,
@@ -427,7 +449,7 @@ pub(super) fn inflate<'brand>(flat: &[&str], token: &mut GhostToken<'brand>) -> 
             return None;
         }
 
-        let node = TripodNode::new(flat[index].to_string(), token).0;
+        let node = TripodTree::from_value(flat[index].to_string(), token);
 
         if let Some(left) = inflate_impl(left_child_index(index), flat, token) {
             set_child(&node, Side::Left, left, token);
