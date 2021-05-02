@@ -145,6 +145,35 @@ Finally, this crate provides a test bed for both of the above.
 After putting them through their paces, I am happy to report that MIRI finds no issue when running the full test-suite.
 
 
+#   And beyond?
+
+One interesting avenue of investigation is automatic translation of the current code, stripping out `StaticRc` and/or
+`GhostCell`.
+
+As long as:
+
+-   The current code is safe -- meaning, the 2 crates used are safe.
+-   The translation preserves safety.
+
+Then this opens up the ability to write entirely safe code and automatically translate it into simpler (though unsafe)
+code -- not unlike the work that compilers do.
+
+Exciting, isn't it?
+
+
+There is one difficulty, though, it's unclear whether the remove/split operations can be translated automatically:
+
+-   Merging 2 pools of nodes -- through `splice` -- is trivially safe: the result is a coarser grain.
+-   Splitting 1 pool of nodes into two, however, is not: the result is finer grain.
+
+Today, the reference-counting and borrowing works _globally_, regardless of which pools of nodes a node belongs to.
+However translating `StaticRc<GhostCell<T>, N, D>` into just `NonNull<T>` breaks this assumptions, and functional bugs
+such as accidentally keeping a link between nodes across pools could lead to aliasing/lifetime issues.
+
+_Note: and even though tracing could solve the issue, it would be linear in the number of elements to trace at best, so
+would not make sense algorithmically._
+
+
 #   That's all folks!
 
 And thanks for reading.
