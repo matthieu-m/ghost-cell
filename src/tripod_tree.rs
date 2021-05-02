@@ -19,7 +19,8 @@ pub use iter::Iter;
 use core::{
     cell::Cell,
     cmp,
-    ops::{Bound, RangeBounds},
+    mem,
+    ops::{Bound, Range, RangeBounds},
 };
 
 use ghost_cell::{GhostCell, GhostToken};
@@ -65,21 +66,9 @@ impl<'brand, T> TripodTree<'brand, T> {
     where
         R: RangeBounds<usize>,
     {
-        let length = self.len(token);
+        let range = self.into_range(range, token);
 
-        let start = match range.start_bound() {
-            Bound::Included(n) => cmp::min(*n, length),
-            Bound::Excluded(n) => cmp::min(n.saturating_add(1), length),
-            Bound::Unbounded => 0,
-        };
-
-        let end = match range.end_bound() {
-            Bound::Included(n) => cmp::min(n.saturating_add(1), length),
-            Bound::Excluded(n) => cmp::min(*n, length),
-            Bound::Unbounded => length,
-        };
-
-        Iter::range(token, self, start..end)
+        Iter::range(token, self, range)
     }
 
     /// Creates a cursor pointing to the root element.
@@ -240,6 +229,127 @@ impl<'brand, T> TripodTree<'brand, T> {
         let mut cursor = self.cursor_mut(token);
         cursor.move_to_back();
         cursor.remove_current()
+    }
+
+    /// Moves all the elements from `other` to the back of the tree, leaving `other` empty.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the total number of elements.
+    /// -   Space: O(1).
+    ///
+    /// No memory allocation nor deallocation occurs.
+    pub fn append(&mut self, other: &mut TripodTree<'brand, T>, token: &mut GhostToken<'brand>) {
+        let mut cursor = self.cursor_mut(token);
+        cursor.move_to_back();
+        cursor.splice_after(other);
+    }
+
+    /// Moves all the elements from `other` to the front of the tree, leaving `other` empty.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the total number of elements.
+    /// -   Space: O(1).
+    ///
+    /// No memory allocation nor deallocation occurs.
+    pub fn prepend(&mut self, other: &mut TripodTree<'brand, T>, token: &mut GhostToken<'brand>) {
+        let mut cursor = self.cursor_mut(token);
+        cursor.move_to_front();
+        cursor.splice_before(other);
+    }
+
+    /// Splits the tree into two at the given index. Returns everything after the given index, including the index.
+    ///
+    /// #   Panics
+    ///
+    /// Panics if `at > self.len()`.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log² N) in the number of elements.
+    /// -   Space: O(1).
+    ///
+    /// No memory allocation nor deallocation occurs.
+    pub fn split_off(&mut self, at: usize, token: &mut GhostToken<'brand>) -> TripodTree<'brand, T> {
+        let length = self.len(token);
+        assert!(at <= length, "{} > {}", at, length);
+
+        let mut result = {
+            let mut cursor = self.cursor_mut(token);
+            cursor.move_to(at);
+            cursor.split_before()
+        };
+
+        mem::swap(self, &mut result);
+
+        result
+    }
+
+    /// Splits the tree into two according to the given range. Returns everything within the range.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log² N) in the number of elements.
+    /// -   Space: O(1).
+    ///
+    /// No memory allocation nor deallocation occurs.
+    pub fn split<R>(&mut self, range: R, token: &mut GhostToken<'brand>) -> TripodTree<'brand, T>
+    where
+        R: RangeBounds<usize>,
+    {
+        let length = self.len(token);
+        let range = self.into_range(range, token);
+
+        //  Full Range, well that's easy.
+        if range.start == 0 && range.end == length {
+            return mem::replace(self, TripodTree::new());
+        }
+
+        //  Until the end.
+        if range.end == length {
+            return self.split_off(range.start, token);
+        }
+
+        //  From the start.
+        if range.start == 0 {
+            let mut result = self.split_off(range.end, token);
+            mem::swap(self, &mut result);
+            return result;
+        }
+
+        //  Interior range.
+        let mut result = self.split_off(range.start, token);
+
+        let mut after_end = result.split_off(range.end - range.start, token);
+
+        let mut cursor = self.cursor_mut(token);
+        cursor.move_to_back();
+        cursor.splice_after(&mut after_end);
+
+        result
+    }
+
+    //  Internal; constructs a Range<usize> suitable for the tree.
+    fn into_range<R>(&self, range: R, token: &GhostToken<'brand>) -> Range<usize>
+    where
+        R: RangeBounds<usize>,
+    {
+        let length = self.len(token);
+
+        let start = match range.start_bound() {
+            Bound::Included(n) => cmp::min(*n, length),
+            Bound::Excluded(n) => cmp::min(n.saturating_add(1), length),
+            Bound::Unbounded => 0,
+        };
+
+        let end = match range.end_bound() {
+            Bound::Included(n) => cmp::min(n.saturating_add(1), length),
+            Bound::Excluded(n) => cmp::min(*n, length),
+            Bound::Unbounded => length,
+        };
+
+        start..end
     }
 
     //  Internal; constructs a QuarterNodePtr from a value.
@@ -504,6 +614,120 @@ fn tree_test() {
 
     with_tree(&holes[..], |token, tree| {
         assert_tree(&holes[..], tree.cursor(token));
+    });
+}
+
+#[test]
+fn tree_append() {
+    const ORIGINAL: &[&str] = &["D", "B", "F", "A", "C", "E", "G"];
+    const SPLICE: &[&str] = &["4", "2", "6", "1", "3", "5", "7"];
+
+    with_tree_duo(ORIGINAL, SPLICE, |token, tree, splice| {
+        tree.append(splice, token);
+
+        //         G
+        //     D       4
+        //   B   F   2   6
+        //  A C E - 1 3 5 7
+        assert_tree(&["G", "D", "4", "B", "F", "2", "6", "A", "C", "E", "-", "1", "3", "5", "7"], tree.cursor(token));
+        assert_tree(&[], splice.cursor(token));
+    });
+}
+
+#[test]
+fn tree_prepend() {
+    const ORIGINAL: &[&str] = &["D", "B", "F", "A", "C", "E", "G"];
+    const SPLICE: &[&str] = &["4", "2", "6", "1", "3", "5", "7"];
+
+    with_tree_duo(ORIGINAL, SPLICE, |token, tree, splice| {
+        tree.prepend(splice, token);
+
+        //         A
+        //     4       D
+        //   2   6   B   F
+        //  1 3 5 7 - C E G
+        assert_tree(&["A", "4", "D", "2", "6", "B", "F", "1", "3", "5", "7", "-", "C", "E", "G"], tree.cursor(token));
+        assert_tree(&[], splice.cursor(token));
+    });
+}
+
+#[test]
+fn tree_split_off() {
+    const ORIGINAL: &[&str] = &["8", "4", "C", "2", "6", "A", "E", "1", "3", "5", "7", "9", "B", "D", "F"];
+
+    with_tree_duo(ORIGINAL, &[], |token, tree, split| {
+        *split = tree.split_off(3, token);
+
+        assert_tree(&["2", "1", "3"], tree.cursor(token));
+        //         8
+        //     6       C
+        //   4   7   A   E
+        //  - 5 - - 9 B D F
+        assert_tree(&["8", "6", "C", "4", "7", "A", "E", "-", "5", "-", "-", "9", "B", "D", "F"], split.cursor(token));
+    });
+}
+
+#[test]
+fn tree_split() {
+    const ORIGINAL: &[&str] = &["8", "4", "C", "2", "6", "A", "E", "1", "3", "5", "7", "9", "B", "D", "F"];
+
+    with_tree_duo(ORIGINAL, &[], |token, tree, split| {
+        eprintln!("===== Split Across Root =====");
+
+        const RANGE: Range<usize> = 3..11;
+
+        *split = tree.split(RANGE, token);
+
+        //     C
+        //   2   E
+        //  1 3 D F
+        assert_tree(&["C", "2", "E", "1", "3", "D", "F"], tree.cursor(token));
+        //         8
+        //     6       A
+        //   4   7   9   B
+        //  - 5 - - - - - -
+        assert_tree(&["8", "6", "A", "4", "7", "9", "B", "-", "5"], split.cursor(token));
+
+        assert_eq!(RANGE.count(), split.len(token));
+    });
+
+    with_tree_duo(ORIGINAL, &[], |token, tree, split| {
+        eprintln!("===== Split Left Sub-Tree =====");
+
+        const RANGE: Range<usize> = 3..6;
+
+        *split = tree.split(RANGE, token);
+
+        //         8
+        //     2       C
+        //   1   3   A   E
+        //  - - - 7 9 B D F
+        assert_tree(&["8", "2", "C", "1", "3", "A", "E", "-", "-", "-", "7", "9", "B", "D", "F"], tree.cursor(token));
+        //   5
+        //  4 6
+        assert_tree(&["5", "4", "6"], split.cursor(token));
+
+        assert_eq!(RANGE.count(), split.len(token));
+    });
+
+    with_tree_duo(ORIGINAL, &[], |token, tree, split| {
+        eprintln!("===== Split Right Sub-Tree =====");
+
+        const RANGE: Range<usize> = 8..12;
+
+        *split = tree.split(RANGE, token);
+
+        //         4
+        //     2       8
+        //   1   3   6   E
+        //  - - - - 5 7 D F
+        assert_tree(&["4", "2", "8", "1", "3", "6", "E", "-", "-", "-", "-", "5", "7", "D", "F"], tree.cursor(token));
+        //     A
+        //   9   C
+        //  - - B -
+        assert_tree(&["A", "9", "C", "-", "-", "B"], split.cursor(token));
+
+        assert_eq!(RANGE.count(), split.len(token));
     });
 }
 
