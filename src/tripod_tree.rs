@@ -26,6 +26,9 @@ use core::{
 use ghost_cell::{GhostCell, GhostToken};
 use static_rc::StaticRc;
 
+#[cfg(feature = "experimental-ghost-cursor")]
+use ghost_cell::GhostCursor;
+
 /// A safe implementation of an indexed balanced binary tree.
 ///
 /// Each node contains 1 element as well as 4 pointers: up, left, right, and the tripod pointer.
@@ -410,6 +413,40 @@ impl<'brand, T> TripodTree<'brand, T> {
 
         node.value
     }
+}
+
+#[cfg(feature = "experimental-ghost-cursor")]
+impl<'brand, T> TripodTree<'brand, T> {
+    /// Returns a mutable reference to the front element, if any.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the number of elements.
+    /// -   Space: O(1).
+    pub fn front_mut<'a>(&'a mut self, token: &'a mut GhostToken<'brand>) -> Option<&'a mut T> {
+        let root = self.root.as_ref()?;
+
+        let mut cursor = GhostCursor::new(token, Some(root));
+        while let Ok(_) = cursor.move_mut(Node::left) {}
+
+        cursor.into_inner().map(|node| &mut node.value)
+    }
+
+    /// Returns a mutable reference to the back element, if any.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the number of elements.
+    /// -   Space: O(1).
+    pub fn back_mut<'a>(&'a mut self, token: &'a mut GhostToken<'brand>) -> Option<&'a mut T> {
+        let root = self.root.as_ref()?;
+
+        let mut cursor = GhostCursor::new(token, Some(root));
+        while let Ok(_) = cursor.move_mut(Node::right) {}
+
+        cursor.into_inner().map(|node| &mut node.value)
+    }
+
 }
 
 impl<'brand, T> Default for TripodTree<'brand, T> {
