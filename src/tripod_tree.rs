@@ -16,7 +16,11 @@ mod iter;
 pub use cursor::{Cursor, CursorMut};
 pub use iter::Iter;
 
-use core::cell::Cell;
+use core::{
+    cell::Cell,
+    cmp,
+    ops::{Bound, RangeBounds},
+};
 
 use ghost_cell::{GhostCell, GhostToken};
 use static_rc::StaticRc;
@@ -25,7 +29,7 @@ use static_rc::StaticRc;
 ///
 /// Each node contains 1 element as well as 4 pointers: up, left, right, and the tripod pointer.
 pub struct TripodTree<'brand, T> {
-    root: Option<QuarterNodePtr<'brand, T>>, 
+    root: Option<QuarterNodePtr<'brand, T>>,
 }
 
 impl<'brand, T> TripodTree<'brand, T> {
@@ -37,9 +41,45 @@ impl<'brand, T> TripodTree<'brand, T> {
         Self { root: Some(Self::from_value(value, token)) }
     }
 
-    /// Creates an iterator pointing to the front element.
+    /// Creates an iterator over the entire tree, from front to back.
+    ///
+    /// #   Complexity
+    ///
+    /// The complexity of this method itself is O(1).
+    ///
+    /// The complexity of calling `next` on the resulting iterator is O(log N) in the number of elements.
     pub fn iter<'a>(&'a self, token: &'a GhostToken<'brand>) -> Iter<'a, 'brand, T> {
         Iter::new(token, self)
+    }
+
+    /// Creates an iterator over the specified range, from front to back.
+    ///
+    /// If the start bound is greater than the end bound, this is empty.
+    ///
+    /// #   Complexity
+    ///
+    /// The complexity of this method itself is O(1).
+    ///
+    /// The complexity of calling `next` on the resulting iterator is O(log N) in the number of elements.
+    pub fn iter_range<'a, R>(&'a self, range: R, token: &'a GhostToken<'brand>) -> Iter<'a, 'brand, T>
+    where
+        R: RangeBounds<usize>,
+    {
+        let length = self.len(token);
+
+        let start = match range.start_bound() {
+            Bound::Included(n) => cmp::min(*n, length),
+            Bound::Excluded(n) => cmp::min(n.saturating_add(1), length),
+            Bound::Unbounded => 0,
+        };
+
+        let end = match range.end_bound() {
+            Bound::Included(n) => cmp::min(n.saturating_add(1), length),
+            Bound::Excluded(n) => cmp::min(*n, length),
+            Bound::Unbounded => length,
+        };
+
+        Iter::range(token, self, start..end)
     }
 
     /// Creates a cursor pointing to the root element.
@@ -92,6 +132,7 @@ impl<'brand, T> TripodTree<'brand, T> {
         if let Some(root) = self.root.take() {
             let mut tripod = root.borrow(token).deploy();
 
+            //  O(N) iterations, performing O(1) work each.
             loop {
                 //  Clear the left sub-tree first.
                 if let Some(left) = tripod.borrow(token).left() {
@@ -161,7 +202,7 @@ impl<'brand, T> TripodTree<'brand, T> {
 
         Self::full_into_inner(full)
     }
-    
+
     //  Internal; returns the full pointer.
     fn node_into_full(node: QuarterNodePtr<'brand, T>, token: &mut GhostToken<'brand>) -> FullNodePtr<'brand, T> {
         let left = node.borrow_mut(token).left.take().expect("Left child - pointing to self");

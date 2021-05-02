@@ -14,9 +14,16 @@ pub struct Iter<'a, 'brand, T> {
 }
 
 impl<'a, 'brand, T> Iter<'a, 'brand, T> {
-    /// Creates a new instance of the Iter.
+    /// Creates a new instance, iterating over the entire tree.
     pub fn new(token: &'a GhostToken<'brand>, tree: &'a TripodTree<'brand, T>) -> Self {
         let range = 0..tree.len(token);
+        let cursor = tree.cursor(token);
+
+        Self { range, cursor, }
+    }
+
+    /// Creates a new instance, iterating over the specified range of the tree.
+    pub fn range(token: &'a GhostToken<'brand>, tree: &'a TripodTree<'brand, T>, range: Range<usize>) -> Self {
         let cursor = tree.cursor(token);
 
         Self { range, cursor, }
@@ -76,6 +83,49 @@ mod tests {
 use super::super::tests::*;
 
 const TREE: &[&str] = &["8", "4", "C", "2", "6", "A", "E", "1", "3", "5", "7", "9", "B", "D", "F"];
+
+#[test]
+fn iter_range() {
+    with_tree(TREE, |token, tree| {
+        eprintln!("===== Full Range =====");
+
+        let iter = tree.iter_range(.., token);
+
+        let collected: Vec<&str> = iter.map(String::as_str).collect();
+
+        assert_eq!(&["1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"][..], collected);
+    });
+
+    with_tree(TREE, |token, tree| {
+        eprintln!("===== RangeTo =====");
+
+        let iter = tree.iter_range(..7, token);
+
+        let collected: Vec<&str> = iter.map(String::as_str).collect();
+
+        assert_eq!(&["1", "2", "3", "4", "5", "6", "7"][..], collected);
+    });
+
+    with_tree(TREE, |token, tree| {
+        eprintln!("===== RangeFrom =====");
+
+        let iter = tree.iter_range(7.., token);
+
+        let collected: Vec<&str> = iter.map(String::as_str).collect();
+
+        assert_eq!(&["8", "9", "A", "B", "C", "D", "E", "F"][..], collected);
+    });
+
+    with_tree(TREE, |token, tree| {
+        eprintln!("===== Range =====");
+
+        let iter = tree.iter_range(5..9, token);
+
+        let collected: Vec<&str> = iter.map(String::as_str).collect();
+
+        assert_eq!(&["6", "7", "8", "9"][..], collected);
+    });
+}
 
 #[test]
 fn iter_next() {
