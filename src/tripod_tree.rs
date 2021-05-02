@@ -125,7 +125,7 @@ impl<'brand, T> TripodTree<'brand, T> {
     /// #   Complexity
     ///
     /// -   Time: O(N) in the number of elements.
-    /// -   Space: O(1)
+    /// -   Space: O(1).
     ///
     /// Note: if a panic occurs, because dropping an element panics, then the tree is left is an unusable state.
     pub fn clear(&mut self, token: &mut GhostToken<'brand>) {
@@ -168,6 +168,78 @@ impl<'brand, T> TripodTree<'brand, T> {
                 }
             }
         }
+    }
+
+    /// Returns a reference to the front element, if any.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the number of elements.
+    /// -   Space: O(1).
+    pub fn front<'a>(&'a self, token: &'a GhostToken<'brand>) -> Option<&'a T> {
+        let mut cursor = self.cursor(token);
+        cursor.move_to_front();
+        cursor.current()
+    }
+
+    /// Returns a reference to the back element, if any.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the number of elements.
+    /// -   Space: O(1).
+    pub fn back<'a>(&'a self, token: &'a GhostToken<'brand>) -> Option<&'a T> {
+        let mut cursor = self.cursor(token);
+        cursor.move_to_back();
+        cursor.current()
+    }
+
+    /// Pushes an element to the front of the list.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the number of elements.
+    /// -   Space: O(1).
+    pub fn push_front(&mut self, value: T, token: &mut GhostToken<'brand>) {
+        let mut cursor = self.cursor_mut(token);
+        cursor.move_to_front();
+        cursor.insert_before(value);
+    }
+
+    /// Removes and returns the front element of the list, if any.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the number of elements.
+    /// -   Space: O(1).
+    pub fn pop_front(&mut self, token: &mut GhostToken<'brand>) -> Option<T> {
+        let mut cursor = self.cursor_mut(token);
+        cursor.move_to_front();
+        cursor.remove_current()
+    }
+
+    /// Pushes an element to the back of the list.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the number of elements.
+    /// -   Space: O(1).
+    pub fn push_back(&mut self, value: T, token: &mut GhostToken<'brand>) {
+        let mut cursor = self.cursor_mut(token);
+        cursor.move_to_back();
+        cursor.insert_after(value);
+    }
+
+    /// Removes and returns the back element of the list, if any.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the number of elements.
+    /// -   Space: O(1).
+    pub fn pop_back(&mut self, token: &mut GhostToken<'brand>) -> Option<T> {
+        let mut cursor = self.cursor_mut(token);
+        cursor.move_to_back();
+        cursor.remove_current()
     }
 
     //  Internal; constructs a QuarterNodePtr from a value.

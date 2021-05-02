@@ -672,6 +672,26 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
         self.switch_tripod(new_tripod, index);
     }
 
+    /// Moves to the cursor to the root of the tree.
+    ///
+    /// If there is no such element, moves to the "twilight" non-element.
+    pub fn move_to_root(&mut self) {
+        //  If list empty, no root to move to.
+        if self.tree.is_empty() {
+            return;
+        }
+
+        //  If pointing at root, no need to move.
+        if self.node.is_some() && self.peek_up().is_none() {
+            return;
+        }
+
+        let root_tripod = self.tree.root.as_ref().map(|node| self.deploy_tripod(node));
+        let root_index = root_tripod.as_ref().map(|tripod| tripod.borrow(self.token).index(self.token)).unwrap_or(0);
+
+        self.switch_tripod(root_tripod, root_index);
+    }
+
     /// Attempts to move the cursor to the parent element, if any.
     ///
     /// Returns a reference to the pointed to element, in case of success.
@@ -761,38 +781,6 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
 
     /// Returns a reference to the child element on the designed side, if any.
     pub fn peek_down(&self, side: Side) -> Option<&T> { self.peek_down_node(side).0.map(|node| &node.borrow(self.token).value) }
-
-    //  Internal; move to the root node.
-    fn move_to_root(&mut self) {
-        //  If list empty, no root to move to.
-        if self.tree.is_empty() {
-            return;
-        }
-
-        //  If pointing at root, no need to move.
-        if self.node.is_some() && self.peek_up().is_none() {
-            return;
-        }
-
-        let root_tripod = self.tree.root.as_ref().map(|node| self.deploy_tripod(node));
-        let root_index = root_tripod.as_ref().map(|tripod| tripod.borrow(self.token).index(self.token)).unwrap_or(0);
-
-        self.switch_tripod(root_tripod, root_index);
-    }
-
-    //  Internal; move to the front node.
-    fn move_to_front(&mut self) {
-        self.move_to_root();
-
-        while let Some(_) = self.try_move_left() {}
-    }
-
-    //  Internal; move to the back node.
-    fn move_to_back(&mut self) {
-        self.move_to_root();
-
-        while let Some(_) = self.try_move_right() {}
-    }
 
     //  Internal; extract the root and its index from the tree.
     fn root_of<'b>(token: &'b GhostToken<'brand>, tree: &'b TripodTree<'brand, T>) -> (Option<&'b GhostNode<'brand, T>>, usize) {
@@ -928,6 +916,34 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
         let new_tripod = node.map(|node| self.deploy_tripod(node));
 
         self.switch_tripod(new_tripod, at);
+    }
+
+    /// Moves the cursor to the front element.
+    ///
+    /// If there is no such element, then the cursor moves to the "twilight" non-element.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the number of element.
+    /// -   Space: O(1).
+    pub fn move_to_front(&mut self) {
+        self.move_to_root();
+
+        while let Some(_) = self.try_move_left() {}
+    }
+
+    /// Moves the cursor to the front element.
+    ///
+    /// If there is no such element, then the cursor moves to the "twilight" non-element.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the number of element.
+    /// -   Space: O(1).
+    pub fn move_to_back(&mut self) {
+        self.move_to_root();
+
+        while let Some(_) = self.try_move_right() {}
     }
 
     /// Attempts to move the cursor to the next element, if any.
