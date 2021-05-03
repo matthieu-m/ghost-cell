@@ -38,7 +38,7 @@ use core::ops::DispatchFromDyn;
 ///     and extra capabilities are unlocked.
 pub struct StaticRcRef<'a, T: ?Sized, const NUM: usize, const DEN: usize> {
     pointer: NonNull<T>,
-    _marker: PhantomData<&'a T>,
+    _marker: PhantomData<&'a mut T>,
 }
 
 impl<'a, T, const N: usize> StaticRcRef<'a, T, N, N> {
@@ -495,3 +495,19 @@ impl<'a, T: ?Sized, const NUM: usize, const DEN: usize> marker::Unpin for Static
 unsafe impl<'a, T: ?Sized + marker::Send, const NUM: usize, const DEN: usize> marker::Send for StaticRcRef<'a, T, NUM, DEN> {}
 
 unsafe impl<'a, T: ?Sized + marker::Sync, const NUM: usize, const DEN: usize> marker::Sync for StaticRcRef<'a, T, NUM, DEN> {}
+
+
+/// ```compile_fail,E0597
+/// let a = String::from("foo");
+/// let mut a_ref = &a;
+/// let mut rc = static_rc::StaticRcRef::<_,1,1>::new(&mut a_ref);
+/// {
+///     let b = String::from("bar");
+///     *rc = &b; // a_ref now points to b
+/// }
+/// // b is now dropped
+/// assert_ne!(a_ref, "bar");  // This should fail to compile.
+/// ```
+fn test_use_after_free() {
+    #![allow(dead_code)]
+}
