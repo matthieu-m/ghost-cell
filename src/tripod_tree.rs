@@ -186,6 +186,22 @@ impl<'brand, T> TripodTree<'brand, T> {
         cursor.current()
     }
 
+    /// Returns a reference to the element at the given index, if any.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the number of elements.
+    /// -   Space: O(1).
+    pub fn at<'a>(&'a self, at: usize, token: &'a GhostToken<'brand>) -> Option<&'a T> {
+        if at >= self.len(token) {
+            return None;
+        }
+
+        let mut cursor = self.cursor(token);
+        cursor.move_to(at);
+        cursor.current()
+    }
+
     /// Pushes an element to the front of the list.
     ///
     /// #   Complexity
@@ -447,6 +463,39 @@ impl<'brand, T> TripodTree<'brand, T> {
         cursor.into_inner().map(|node| &mut node.value)
     }
 
+    /// Returns a mutable reference to the element at the given index, if any.
+    ///
+    /// #   Complexity
+    ///
+    /// -   Time: O(log N) in the number of elements.
+    /// -   Space: O(1).
+    pub fn at_mut<'a>(&'a mut self, mut at: usize, token: &'a mut GhostToken<'brand>) -> Option<&'a mut T> {
+        use cmp::Ordering::*;
+
+        if at >= self.len(token) {
+            return None;
+        }
+
+        let root = self.root.as_ref()?;
+
+        let mut cursor = GhostCursor::new(token, Some(root));
+
+        loop {
+            let index = cursor.borrow().map(|node| node.index(cursor.token())).unwrap_or(0);
+
+            match at.cmp(&index) {
+                Less => cursor.move_mut(Node::left),
+                Equal => break,
+                Greater => {
+                    at = at - index - 1;
+                    cursor.move_mut(Node::right)
+                },
+            }.expect("Successful move!");
+        }
+
+        cursor.into_inner().map(|node| &mut node.value)
+    }
+
 }
 
 impl<'brand, T> Default for TripodTree<'brand, T> {
@@ -632,6 +681,16 @@ pub(super) fn assert_tree(expected: &[&str], cursor: Cursor<'_, '_, String>) {
     assert_eq!(expected, flat);
 }
 
+#[track_caller]
+fn assert_element(expected: Option<&str>, actual: Option<&String>) {
+    assert_eq!(expected, actual.map(String::as_str));
+}
+
+#[track_caller]
+fn assert_element_mut(expected: Option<&str>, actual: Option<&mut String>) {
+    assert_eq!(expected, actual.map(|s| &**s));
+}
+
 #[test]
 fn tree_new() {
     with_tree(&[][..], |token, tree| {
@@ -651,6 +710,66 @@ fn tree_test() {
 
     with_tree(&holes[..], |token, tree| {
         assert_tree(&holes[..], tree.cursor(token));
+    });
+}
+
+#[test]
+fn tree_access() {
+    const TREE: &[&str] = &["4", "2", "6", "1", "3", "5", "7"];
+
+    with_tree(TREE, |token, tree| {
+        assert_element(Some("1"), tree.front(token));
+        assert_element(Some("7"), tree.back(token));
+
+        assert_element(Some("1"), tree.at(0, token));
+        assert_element(Some("2"), tree.at(1, token));
+        assert_element(Some("3"), tree.at(2, token));
+        assert_element(Some("4"), tree.at(3, token));
+        assert_element(Some("5"), tree.at(4, token));
+        assert_element(Some("6"), tree.at(5, token));
+        assert_element(Some("7"), tree.at(6, token));
+        assert_element(None, tree.at(7, token));
+    });
+}
+
+#[cfg(feature = "experimental-ghost-cursor")]
+#[test]
+fn tree_access_mut() {
+    const TREE: &[&str] = &["4", "2", "6", "1", "3", "5", "7"];
+
+    with_tree(TREE, |token, tree| {
+        assert_element_mut(Some("1"), tree.front_mut(token));
+        assert_element_mut(Some("7"), tree.back_mut(token));
+
+        assert_element_mut(Some("1"), tree.at_mut(0, token));
+        assert_element_mut(Some("2"), tree.at_mut(1, token));
+        assert_element_mut(Some("3"), tree.at_mut(2, token));
+        assert_element_mut(Some("4"), tree.at_mut(3, token));
+        assert_element_mut(Some("5"), tree.at_mut(4, token));
+        assert_element_mut(Some("6"), tree.at_mut(5, token));
+        assert_element_mut(Some("7"), tree.at_mut(6, token));
+        assert_element_mut(None, tree.at_mut(7, token));
+    });
+}
+
+#[test]
+fn tree_pop_push() {
+    const TREE: &[&str] = &["4", "2", "6", "1", "3", "5", "7"];
+
+    with_tree(TREE, |token, tree| {
+        assert_tree(TREE, tree.cursor(token));
+
+        assert_eq!(Some("1".to_string()), tree.pop_front(token));
+        assert_tree(&["4", "2", "6", "-", "3", "5", "7"], tree.cursor(token));
+
+        assert_eq!(Some("7".to_string()), tree.pop_back(token));
+        assert_tree(&["4", "2", "6", "-", "3", "5"], tree.cursor(token));
+
+        tree.push_front("1".to_string(), token);
+        assert_tree(&["4", "2", "6", "1", "3", "5"], tree.cursor(token));
+
+        tree.push_back("7".to_string(), token);
+        assert_tree(TREE, tree.cursor(token));
     });
 }
 

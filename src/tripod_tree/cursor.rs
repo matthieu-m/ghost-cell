@@ -88,7 +88,7 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
         self.node = node;
     }
 
-    /// Moves the cursor to the child element on the design side.
+    /// Moves the cursor to the child element on the given side.
     ///
     /// If the element the cursor points to has no such element, moves to the "twilight" non-element.
     ///
@@ -151,7 +151,7 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
         }
     }
 
-    /// Attempts to move the cursor down to the designed side, if any.
+    /// Attempts to move the cursor down to the given side, if any.
     ///
     /// Returns a reference to the pointed to element, in case of success.
     ///
@@ -181,7 +181,7 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
     /// Returns a reference to the right child, if any.
     pub fn peek_right(&self) -> Option<&'a T> { self.peek_right_node().0.map(|node| &node.borrow(self.token).value) }
 
-    /// Returns a reference to the child element on the designed side, if any.
+    /// Returns a reference to the child element on the given side, if any.
     pub fn peek_down(&self, side: Side) -> Option<&'a T> { self.peek_down_node(side).0.map(|node| &node.borrow(self.token).value) }
 
     //  Internal; extract the root and its index from the tree.
@@ -253,7 +253,7 @@ impl<'a, 'brand, T> Cursor<'a, 'brand, T> {
         }
     }
 
-    //  Internal; returns a reference to the child GhostNode on the designed side, and the matching index.
+    //  Internal; returns a reference to the child GhostNode on the given side, and the matching index.
     fn peek_down_node(&self, side: Side) -> (Option<&'a GhostNode<'brand, T>>, usize) {
         if let Some(node) = self.node {
             let node = node.borrow(self.token);
@@ -746,7 +746,7 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
         }
     }
 
-    /// Attempts to move the cursor down to the designed side, if any.
+    /// Attempts to move the cursor down to the given side, if any.
     ///
     /// Returns a reference to the pointed to element, in case of success.
     ///
@@ -779,7 +779,7 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
     /// Returns a reference to the right element, if any.
     pub fn peek_right(&self) -> Option<&T> { self.peek_right_node().0.map(|node| &node.borrow(self.token).value) }
 
-    /// Returns a reference to the child element on the designed side, if any.
+    /// Returns a reference to the child element on the given side, if any.
     pub fn peek_down(&self, side: Side) -> Option<&T> { self.peek_down_node(side).0.map(|node| &node.borrow(self.token).value) }
 
     //  Internal; extract the root and its index from the tree.
@@ -822,7 +822,7 @@ impl<'a, 'brand, T> CursorMut<'a, 'brand, T> {
         self.as_cursor().peek_right_node()
     }
 
-    //  Internal; returns a reference to the child GhostNode on the designed side, and the matching index.
+    //  Internal; returns a reference to the child GhostNode on the given side, and the matching index.
     fn peek_down_node(&self, side: Side) -> (Option<&GhostNode<'brand, T>>, usize) {
         self.as_cursor().peek_down_node(side)
     }
