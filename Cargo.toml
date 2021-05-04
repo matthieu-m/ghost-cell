@@ -1,2 +1,2 @@
 [workspace]
-members = ["ghost-cell", "ghost-collections", "static-rc", "ghost-macro", "ghost"]
+members = ["ghost-cell", "ghost-collections", "static-rc", "ghost"]

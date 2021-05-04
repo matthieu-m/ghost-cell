@@ -1,0 +1,30 @@
+[package]
+authors = ["Matthieu M. <matthieum.147192@gmail.com>"]
+edition = "2018"
+name    = "ghost"
+version = "0.1.0"
+
+[features]
+default = ["alloc"]
+
+alloc           = ["static-rc/alloc"]
+collections     = ["ghost-collections"]
+nightly         = [
+  "static-rc/nightly-async-stream",
+  "static-rc/nightly-coerce-unsized",
+  "static-rc/nightly-dispatch-from-dyn",
+  "static-rc/nightly-generator-trait",
+]
+test-tree-debug = ["ghost-collections/test-tree-debug"]
+
+experimental              = ["experimental-ghost-cursor", "experimental-lift"]
+experimental-ghost-cursor = [
+  "ghost-cell/experimental-ghost-cursor",
+  "ghost-collections/experimental-ghost-cursor",
+]
+experimental-lift         = ["static-rc/experimental-lift"]
+
+[dependencies]
+ghost-cell        = { path = "../ghost-cell", version = "0.2" }
+ghost-collections = { path = "../ghost-collections", version = "0.1", optional = true }
+static-rc         = { path = "../static-rc", version = "0.3", default-features = false }
