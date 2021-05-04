@@ -244,22 +244,22 @@ impl<'a, T: ?Sized, const NUM: usize, const DEN: usize> StaticRcRef<'a, T, NUM, 
         'a: 'b,
         T: 'b,
         F: FnOnce(&'b Self) -> &'b mut Option<Self>,
-    { 
+    {
         let slot = {
             //  Safety:
             //  -   Even though the lifetime of `this_ref` and `this` was "unlinked" by going through a pointer,
             //      `this_ref` will notbe used after moving `this`, and therefore will remain valid throughout its used.
             let this_ref = unsafe { &*(&this as *const _) };
-    
+
             fun(this_ref) as *mut Option<Self>
         };
-    
+
         //  Safety:
         //  -   Even though the lifetime of `slot` and `this` was "unlinked" by going through a pointer, `slot` is
         //      still validfor the duration of this function because `this` is not destroyed, and therefore its
         //      pointee is still alive.
         let slot = unsafe { &mut *slot };
-    
+
         slot.replace(this)
     }
 }
@@ -496,6 +496,8 @@ unsafe impl<'a, T: ?Sized + marker::Send, const NUM: usize, const DEN: usize> ma
 
 unsafe impl<'a, T: ?Sized + marker::Sync, const NUM: usize, const DEN: usize> marker::Sync for StaticRcRef<'a, T, NUM, DEN> {}
 
+#[cfg(test)]
+mod tests {
 
 /// ```compile_fail,E0597
 /// let a = String::from("foo");
@@ -511,3 +513,5 @@ unsafe impl<'a, T: ?Sized + marker::Sync, const NUM: usize, const DEN: usize> ma
 fn test_use_after_free() {
     #![allow(dead_code)]
 }
+
+} // mod tests
