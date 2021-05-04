@@ -10,8 +10,8 @@ keywords = ["experimental", "aliasing", "borrowing"]
 categories = ["data-structures", "no-std"]
 
 [dependencies]
-ghost-cell = "0.2"
-static-rc = { version = "0.3.0", features = ["experimental-lift"] }
+ghost-cell = { path = "../ghost-cell", version = "0.2" }
+static-rc = { path = "../static-rc", version = "0.3.0", features = ["experimental-lift"] }
 
 [features]
 # Enables a variety of features relying on the experimental ghost-cell `GhostCursor`, such as LinkedList's append and cursor_mut.
