@@ -16,13 +16,12 @@ model this permission, tied at compile-time to a number of said `GhostCell` via 
 
 #   Safety
 
-In the GhostCell paper, Ralf Jung and his colleagues from MPI-SWS, Germany, formally demonstrate the safety of
+In the GhostCell paper, Joshua Yanovski and his colleagues from MPI-SWS, Germany, formally demonstrate the safety of
 `GhostCell` using the separation logic they have developed as part of the
 [Rust Belt project](https://plv.mpi-sws.org/rustbelt/). I personally would trust them on this.
 
-This implementation is, unfortunately, unofficial. Furthermore, a number of methods were left as an exercise to the
-reader, and this reader cannot guarantee that they successfully managed in filling the blanks without introducing any
-unsafety.
+The official implementation can be found at https://gitlab.mpi-sws.org/FP/ghostcell/-/tree/master/ghostcell, along with
+examples. The current implementation will be upgraded soonish, now that I'm aware of it.
 
 Use at your own risks!
 
@@ -35,7 +34,7 @@ This is very much an Alpha quality release, _at best_.
 
 If you haven't looked closer, there's one lone doctest.
 
-_(Though the one doctest runs under MIRI, eh!)_
+_(Though the one doctest runs under Miri, eh!)_
 
 
 #   How to use?
@@ -67,7 +66,8 @@ fn demo(n: usize) {
 
 This means 2 restrictions:
 
--   Since the closure must be valid for all lifetimes, it must notably be valid for the `'static` lifetime.
+-   The closure must be variant over the lifetimes, this does not always play well with closures already containing
+    references.
 -   None of the branded items can be returned by the closure.
 
 Then, within the closure, any `GhostCell` can be associated to one, and only one, `GhostToken` which will encode its
