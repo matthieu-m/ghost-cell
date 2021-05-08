@@ -1,47 +1,49 @@
+//! A `GhostCursor` implements a cursor to navigate across a web of `GhostCell`s.
+//!
+//! #   Safety
+//!
+//! This is an untrodden path, here be dragons.
+//!
+//! ##  Safety: Aliasing.
+//!
+//! The `GhostCursor` trivially enforces safe aliasing by always tying the lifetime of the token it materializes to its
+//! own lifetime.
+//!
+//! The `GhostCursor` itself is therefore borrowed mutably or immutably for the duration of the lifetime of the token,
+//! preventing any abuse.
+//!
+//! ##  Safety: Lifetime
+//!
+//! This is the crux of the issue, and the most likely place for unsoundness in the whole scheme.
+//!
+//! Let us start by a broken example to better understand what we are looking for. Let us imagine a simple doubly linked
+//! list data-structure where each node has an optional previous and next fields to point to the previous and next nodes
+//! respectively.
+//!
+//! Imagine the following set-up with 2 nodes `a` and `b`:
+//!
+//! -   On the stack is `root`, a pointer owning half of `a` -- the other half doesn't matter here.
+//! -   `a.prev` and `a.next` are each a pointer owning half of `b`.
+//!
+//! Any method which allows both obtaining a reference to `b` and simultaneously a mutable reference to `a` is unsound,
+//! for owning a mutable reference to `a` allows setting both of its `prev` and `next` fields to `None`, dropping `b`,
+//! and of course retaining a reference to a dropped element is opening the door to Undefined Behavior.
+//!
+//! Hence, the very stringent invariant that the `GhostCursor` must enforce is that apart from the currently mutable
+//! element, no reference to other elements with no _separate_ anchoring ownership paths to the stack can be observed.
+//!
+//! Or, in short, the `GhostCursor` may allow either:
+//!
+//! -   Observing multiple immutable references at a time.
+//! -   Or observing a single mutable reference at a time.
+//!
+//! A familiar restriction for Rust programmers.
+
 use core::ptr::NonNull;
 
 use super::{GhostCell, GhostToken};
 
-/// A GhostCursor implements a Cursor to navigate across a web of GhostCells.
-///
-/// #   Safety
-///
-/// This is an untrodden path, here be dragons.
-///
-/// ##  Safety: Aliasing.
-///
-/// The `GhostCursor` trivially enforces safe aliasing by always tying the lifetime of the token it materializes to its
-/// own lifetime.
-///
-/// The `GhostCursor` itself is therefore borrowed mutably or immutably for the duration of the lifetime of the token,
-/// preventing any abuse.
-///
-/// ##  Safety: Lifetime
-///
-/// This is the crux of the issue, and the most likely place for unsoundness in the whole scheme.
-///
-/// Let us start by a broken example to better understand what we are looking for. Let us imagine a simple doubly linked
-/// list data-structure where each node has an optional previous and next fields to point to the previous and next nodes
-/// respectively.
-///
-/// Imagine the following set-up with 2 nodes `a` and `b`:
-///
-/// -   On the stack is `root`, a pointer owning half of `a` -- the other half doesn't matter here.
-/// -   `a.prev` and `a.next` are each a pointer owning half of `b`.
-///
-/// Any method which allows both obtaining a reference to `b` and simultaneously a mutable reference to `a` is unsound,
-/// for owning a mutable reference to `a` allows setting both of its `prev` and `next` fields to `None`, dropping `b`,
-/// and of course retaining a reference to a dropped element is opening the door to Undefined Behavior.
-///
-/// Hence, the very stringent invariant that the `GhostCursor` must enforce is that apart from the currently mutable
-/// element, no reference to other elements with no _separate_ anchoring ownership paths to the stack can be observed.
-///
-/// Or, in short, the `GhostCursor` may allow either:
-///
-/// -   Observing multiple immutable references at a time.
-/// -   Or observing a single mutable reference at a time.
-///
-/// A familiar restriction for Rust programmers.
+/// A `GhostCursor`, to navigate across a web of `GhostCell`s.
 pub struct GhostCursor<'a, 'brand, T> {
     token: NonNull<GhostToken<'brand>>,
     cell: Option<&'a GhostCell<'brand, T>>,
@@ -60,21 +62,11 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     /// #   Safety
     ///
     /// The token is still mutably borrowed for as long as the return value lives.
-    ///
-    /// ```compile_fail
-    /// use ghost_cell::{GhostCell, GhostCursor, GhostToken};
-    ///
-    /// GhostToken::new(|mut token| {
-    ///     let (one, two) = (GhostCell::new("One".to_string()), GhostCell::new("Two".to_string()));
-    ///
-    ///     let cursor = GhostCursor::new(&mut token, Some(&one));
-    ///     if let Some(one) = cursor.into_inner() {
-    ///         println!("{?:}", two.borrow(&token));  //  Fail, token still borrowed by `one`.
-    ///         *one = "Three".to_string();
-    ///     }
-    /// })
-    /// ```
     pub fn into_inner(self) -> Option<&'a mut T> {
+        //  Safety:
+        //  -   `self` is not borrowed, therefore the token is not borrowed.
+        //  -   The lifetime of the result ensures that the token remains mutably borrowed for as long as the result
+        //      exists.
         let token = unsafe { as_mut(self.token) };
 
         self.cell.map(move |cell| cell.borrow_mut(token))
@@ -85,34 +77,11 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     /// #   Safety
     ///
     /// The token is still immutably borrowed for as long as the return value lives.
-    ///
-    /// ```compile_fail
-    /// use ghost_cell::{GhostCell, GhostCursor, GhostToken};
-    ///
-    /// GhostToken::new(|mut token| {
-    ///     let (one, two) = (GhostCell::new("One".to_string()), GhostCell::new("Two".to_string()));
-    ///
-    ///     let cursor = GhostCursor::new(&mut token, Some(&one));
-    ///     let aliased_token = cursor.into_parts().0;
-    ///     *two.borrow_mut(&mut token) = "Four".to_string();   //  Fail, token still borrowed by `aliased_token`.
-    ///     println!("{:?}", one.borrow(aliased_token));
-    /// })
-    /// ```
-    ///
-    /// ```compile_fail
-    /// use ghost_cell::{GhostCell, GhostCursor, GhostToken};
-    ///
-    /// GhostToken::new(|mut token| {
-    ///     let (one, two) = (GhostCell::new("One".to_string()), GhostCell::new("Two".to_string()));
-    ///
-    ///     let cursor = GhostCursor::new(&mut token, Some(&one));
-    ///     if let Some(one) = cursor.into_parts().1 {
-    ///         *two.borrow_mut(&mut token) = "Four".to_string();   //  Fail, token still borrowed by `one`.
-    ///         println!("{:?}", one);
-    ///     }
-    /// })
-    /// ```
     pub fn into_parts(self) -> (&'a GhostToken<'brand>, Option<&'a GhostCell<'brand, T>>) {
+        //  Safety:
+        //  -   `self` is not borrowed, therefore the token is not borrowed.
+        //  -   The lifetime of the result ensures that the token and cell remain borrowed for as long as the result
+        //      exists.
         (unsafe { as_ref(self.token) }, self.cell)
     }
 
@@ -131,14 +100,52 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     }
 
     /// Returns a reference to the inner value of the current cell.
+    ///
+    /// #   Example
+    ///
+    /// ```
+    /// use ghost_cell::{GhostCell, GhostCursor, GhostToken};
+    ///
+    /// GhostToken::new(|mut token| {
+    ///     let cell = GhostCell::new(42);
+    ///
+    ///     let cursor = GhostCursor::new(&mut token, Some(&cell));
+    ///
+    ///     assert_eq!(Some(&42), cursor.borrow());
+    /// });
+    /// ```
     pub fn borrow(&self) -> Option<&T> {
+        //  Safety:
+        //  -   Borrows `self`, therefore ensuring that no mutably borrow of the token exists.
+        //  -   Restricts the lifetime of `token` to that of `self`.
         let token = unsafe { as_ref(self.token) };
 
         self.cell.map(|cell| cell.borrow(token))
     }
 
     /// Returns a mutable reference to the inner value of the current cell.
+    ///
+    /// #   Example
+    ///
+    /// ```
+    /// use ghost_cell::{GhostCell, GhostCursor, GhostToken};
+    ///
+    /// GhostToken::new(|mut token| {
+    ///     let cell = GhostCell::new(42);
+    ///
+    ///     let mut cursor = GhostCursor::new(&mut token, Some(&cell));
+    ///
+    ///     if let Some(r) = cursor.borrow_mut() {
+    ///         *r = 33;
+    ///     }
+    ///
+    ///     assert_eq!(Some(&33), cursor.borrow());
+    /// });
+    /// ```
     pub fn borrow_mut(&mut self) -> Option<&mut T> {
+        //  Safety:
+        //  -   Borrows `self` mutably, therefore ensuring that no borrow of the token exists.
+        //  -   Restricts the lifetime of `token` to that of `self.`
         let token = unsafe { as_mut(self.token) };
 
         self.cell.map(move |cell| cell.borrow_mut(token))
@@ -179,6 +186,9 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     where
         F: FnOnce(&'a T) -> Option<&'a GhostCell<'brand, T>>,
     {
+        //  Safety:
+        //  -   Borrows `self` mutably, therefore ensuring that no borrow of the token exists.
+        //  -   Restricts the lifetime of the token to that of `self`, or less.
         let token = unsafe { as_ref(self.token) };
 
         let cell = self.cell.ok_or(())?;
@@ -195,7 +205,7 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     /// -   There is no current cell.
     /// -   `fun` returns no cell.
     ///
-    /// In case of error, the current cell is returned.
+    /// In case of error, the current cursor is returned.
     ///
     /// #   Example
     ///
@@ -220,7 +230,7 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     ///     }
     /// });
     /// ```
-    pub fn move_into<U, F>(self, fun: F) -> Result<GhostCursor<'a, 'brand, U>, Self>
+    pub fn move_into<U, F>(mut self, fun: F) -> Result<GhostCursor<'a, 'brand, U>, Self>
     where
         F: FnOnce(&'a T) -> Option<&'a GhostCell<'brand, U>>,
     {
@@ -230,10 +240,13 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     }
 
     //  Internal.
-    fn move_into_impl<U, F>(&self, fun: F) -> Result<GhostCursor<'a, 'brand, U>, ()>
+    fn move_into_impl<U, F>(&mut self, fun: F) -> Result<GhostCursor<'a, 'brand, U>, ()>
     where
         F: FnOnce(&'a T) -> Option<&'a GhostCell<'brand, U>>,
     {
+        //  Safety:
+        //  -   Borrows `self` mutably, therefore ensuring that no borrow of the token exists.
+        //  -   Restricts the lifetime of the token to that of `self`, or less.
         let token_mut = unsafe { as_mut(self.token) };
 
         let cell = self.cell.ok_or(())?;
@@ -254,3 +267,65 @@ unsafe fn as_ref<'a, T>(ptr: NonNull<T>) -> &'a T {
 unsafe fn as_mut<'a, T>(ptr: NonNull<T>) -> &'a mut T {
     &mut *ptr.as_ptr()
 }
+
+#[doc(hidden)]
+pub mod compile_tests {
+
+/// ```compile_fail,E0502
+/// use ghost_cell::{GhostCell, GhostCursor, GhostToken};
+///
+/// GhostToken::new(|mut token| {
+///     let cell = GhostCell::new(1);
+///     let cursor = GhostCursor::new(&mut token, Some(&cell));
+///
+///     assert_eq!(1, *cell.borrow(&token));
+///     assert_eq!(Some(&1), cursor.borrow());
+/// })
+/// ```
+pub fn cursor_new_borrows_token_mutably() {}
+
+/// ```compile_fail,E0502
+/// use ghost_cell::{GhostCell, GhostCursor, GhostToken};
+///
+/// GhostToken::new(|mut token| {
+///     let (one, two) = (GhostCell::new(1), GhostCell::new(2));
+///
+///     let cursor = GhostCursor::new(&mut token, Some(&one));
+///     if let Some(one) = cursor.into_inner() {
+///         assert_eq!(2, *two.borrow(&token));  //  Fail, token still borrowed by `one`.
+///         *one = 3;
+///     }
+/// })
+/// ```
+pub fn cursor_into_inner_leaves_token_borrowed_mutably() {}
+
+/// ```compile_fail,E0499
+/// use ghost_cell::{GhostCell, GhostCursor, GhostToken};
+///
+/// GhostToken::new(|mut token| {
+///     let (one, two) = (GhostCell::new(1), GhostCell::new(2));
+///
+///     let cursor = GhostCursor::new(&mut token, Some(&one));
+///     let aliased_token = cursor.into_parts().0;
+///     *two.borrow_mut(&mut token) = 4;   //  Fail, token still borrowed by `aliased_token`.
+///     assert_eq!(1, *one.borrow(aliased_token));
+/// })
+/// ```
+pub fn cursor_into_parts_first_part_leaves_token_borrowed_mutably() {}
+
+/// ```compile_fail,E0502
+/// use ghost_cell::{GhostCell, GhostCursor, GhostToken};
+///
+/// GhostToken::new(|mut token| {
+///     let (one, two) = (GhostCell::new(1), GhostCell::new(2));
+///
+///     let cursor = GhostCursor::new(&mut token, Some(&one));
+///     if let Some(one) = cursor.into_parts().1 {
+///         *two.borrow_mut(&mut token) = 4;   //  Fail, token still borrowed by `one`.
+///         assert_eq!(1, *one.borrow(&token));
+///     }
+/// })
+/// ```
+pub fn cursor_into_parts_second_part_leaves_token_borrowed_mutably() {}
+
+} // mod compile_tests

@@ -32,9 +32,16 @@ _(And please report any issue)_
 
 This is very much an Alpha quality release, _at best_.
 
-If you haven't looked closer, there's one lone doctest.
+Documentation:
 
-_(Though the one doctest runs under Miri, eh!)_
+-   All methods are documented.
+-   All non-trivial methods have examples.
+
+Tests:
+
+-   All non-trivial methods are tested, via their examples.
+-   All methods with safety invariants are covered with compile-fail tests.
+-   The entire test-suite, including examples, runs under Miri.
 
 
 #   How to use?
@@ -87,6 +94,15 @@ A `GhostCell` is a safe, zero-cost, cell. It allows aliasing with compile-time c
 
 Combined with [`StaticRc`](https://crates.io/crates/static-rc), it allows writing Doubly Linked Lists, Binary Trees and
 B-Trees with parent pointers, etc... in safe, stable, Rust.
+
+
+#   Other Cells
+
+There are other cells in existence, performing a similar function with different trade-offs:
+
+-   The standard `Cell` and `RefCell`.
+-   The multiple cells of the [`qcell` crate](https://crates.io/crates/qcell), of which `LCell` is based on discussions
+    with the author of `GhostCell`, sharing a similar idea.
 
 
 #   That's all folks!

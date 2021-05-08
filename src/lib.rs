@@ -1,14 +1,14 @@
-//! This library provides an implementation of `GhostCell` and its `GhostToken`:
-//!
-//! The implementation is based on http://plv.mpi-sws.org/rustbelt/ghostcell/.
+//! This library provides an implementation of `GhostCell` and its `GhostToken` as per
+//! http://plv.mpi-sws.org/rustbelt/ghostcell/ as well as some extensions.
 //!
 //! #   Safety
 //!
-//! http://plv.mpi-sws.org/rustbelt/ghostcell/ left some blanks in the implementation of `GhostCell` and `GhostToken`
-//! that I have filled in myself. I hopefully didn't make a mistake, hopefully.
+//! The actual implementation of `GhostCell` is found at https://gitlab.mpi-sws.org/FP/ghostcell/-/tree/master/ghostcell
+//! and has been proven safe. I have carefully checked that this implementation faithfully reproduces the safety
+//! guarantees.
 //!
-//! Use at your own risk!
-//!
+//! Extensions to `GhostCell`, such as `GhostCursor`, are not proven, neither at the design nor implementation level.
+//! As such, they are only available if the appropriate Cargo features are enabled.
 //!
 //! #   Example
 //!
@@ -17,19 +17,19 @@
 //! ```rust
 //! use ghost_cell::{GhostToken, GhostCell};
 //!
-//! fn demo(n: usize) {
-//!     let value = GhostToken::new(|mut token| {
-//!         let cell = GhostCell::new(42);
+//! let n = 42;
 //!
-//!         let vec: Vec<_> = (0..n).map(|_| &cell).collect();
+//! let value = GhostToken::new(|mut token| {
+//!     let cell = GhostCell::new(42);
 //!
-//!         *vec[n / 2].borrow_mut(&mut token) = 33;
+//!     let vec: Vec<_> = (0..n).map(|_| &cell).collect();
 //!
-//!         *cell.borrow(&token)
-//!     });
+//!     *vec[n / 2].borrow_mut(&mut token) = 33;
 //!
-//!     assert_eq!(value, 33);
-//! }
+//!     *cell.borrow(&token)
+//! });
+//!
+//! assert_eq!(33, value);
 //! ```
 
 //  Generic features.
@@ -38,12 +38,12 @@
 //  Lints.
 #![deny(missing_docs)]
 
-mod ghost_cell;
+pub mod ghost_cell;
 
 pub use self::ghost_cell::{GhostCell, GhostToken};
 
 #[cfg(feature = "experimental-ghost-cursor")]
-mod ghost_cursor;
+pub mod ghost_cursor;
 
 #[cfg(feature = "experimental-ghost-cursor")]
 pub use self::ghost_cursor::GhostCursor;
