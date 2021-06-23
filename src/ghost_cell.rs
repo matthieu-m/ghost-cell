@@ -232,6 +232,100 @@ impl<'brand, T: ?Sized> GhostCell<'brand, T> {
         //  -   `GhostCell<'_, T>` has the same in-memory representation as `T`.
         unsafe { mem::transmute(t) }
     }
+
+    #[cfg(feature = "experimental-multiple-mutable-borrows")]
+    /// Borrows two `GhostCell`s at the same time.
+    /// If they are the same `GhostCell`, returns `None`.
+    /// Only enabled under experimental feature "experimental-multiple-mutable-borrows".
+    ///
+    /// #   Example
+    ///
+    /// ```rust
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// let n = 42;
+    ///
+    /// let value = GhostToken::new(|mut token| {
+    ///     let cell1 = GhostCell::new(42);
+    ///     let cell2 = GhostCell::new(47);
+    ///
+    ///     let (reference1, reference2): (&mut i32, &mut i32)
+    ///         = GhostCell::borrow_mut_twice(&cell1, &cell2, &mut token).unwrap();
+    ///     *reference1 = 33;
+    ///     *reference2 = 34;
+    /// // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
+    ///
+    ///     (*cell1.borrow(&token), *cell2.borrow(&token))
+    /// });
+    ///
+    /// assert_eq!((33, 34), value);
+    /// ```
+    pub fn borrow_mut_twice<'a, Q>(
+        cell_a: &'a GhostCell<'brand, T>,
+        cell_b: &'a GhostCell<'brand, Q>,
+        _: &'a mut GhostToken<'brand>
+    ) -> Option<(&'a mut T, &'a mut Q)> where T: Sized {
+        // we require that `T`, `Q` are `Sized`, so no fat pointer problems.
+        if core::ptr::eq(cell_a, cell_b as *const _ as *const _) {
+            None
+        } else {
+            unsafe {
+                Some((&mut *cell_a.value.get(), &mut *cell_b.value.get()))
+            }
+        }
+    }
+
+    #[cfg(feature = "experimental-multiple-mutable-borrows")]
+    /// Borrows three `GhostCell`s at the same time.
+    /// If any of them are the same `GhostCell`, returns `None`.
+    /// Only enabled under experimental feature "experimental-multiple-mutable-borrows".
+    ///
+    /// #   Example
+    ///
+    /// ```rust
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// let n = 42;
+    ///
+    /// let value = GhostToken::new(|mut token| {
+    ///     let cell1 = GhostCell::new(42);
+    ///     let cell2 = GhostCell::new(47);
+    ///     let cell3 = GhostCell::new(7);
+    ///
+    ///     let (reference1, reference2, reference3): (&mut i32, &mut i32, &mut i32)
+    ///         = GhostCell::borrow_mut_thrice(&cell1, &cell2, &cell3, &mut token).unwrap();
+    ///     *reference1 = 33;
+    ///     *reference2 = 34;
+    ///     *reference3 = 35;
+    /// // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
+    ///
+    ///     (*cell1.borrow(&token), *cell2.borrow(&token), *cell3.borrow(&token))
+    /// });
+    ///
+    /// assert_eq!((33, 34, 35), value);
+    /// ```
+    pub fn borrow_mut_thrice<'a, Q, R>(
+        cell_a: &'a GhostCell<'brand, T>,
+        cell_b: &'a GhostCell<'brand, Q>,
+        cell_c: &'a GhostCell<'brand, R>,
+        _: &'a mut GhostToken<'brand>
+    ) -> Option<(&'a mut T, &'a mut Q, &'a mut R)> where T: Sized {
+        // we require that `T`, `Q`, `R` are `Sized`, so no fat pointer problems.
+        if     core::ptr::eq(cell_a, cell_b as *const _ as *const _) 
+            || core::ptr::eq(cell_b, cell_c as *const _ as *const _) 
+            || core::ptr::eq(cell_c, cell_a as *const _ as *const _) 
+        {
+            None
+        } else {
+            unsafe {
+                Some((
+                    &mut *cell_a.value.get(),
+                    &mut *cell_b.value.get(),
+                    &mut *cell_c.value.get()
+                ))
+            }
+        }
+    }
 }
 
 //  Safe, convenience methods
