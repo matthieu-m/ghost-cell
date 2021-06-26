@@ -238,7 +238,7 @@ impl<'brand, T: ?Sized> GhostCell<'brand, T> {
 /// Returns `Some(())` if the inputs are distinct, and `None` otherwise.
 fn check_distinct<const N: usize>(arr: [*const (); N]) -> Option<()> {
     for i in 0..N {
-        for j in i+1..N {
+        for j in 0..i {
             if core::ptr::eq(arr[i], arr[j]) {
                 return None;
             }
@@ -249,8 +249,9 @@ fn check_distinct<const N: usize>(arr: [*const (); N]) -> Option<()> {
 }
 
 #[cfg(feature = "experimental-multiple-mutable-borrows")]
-/// A Sealed trait for implementing multiple borrows for any number of arguments.
-pub trait SealedTupleTrait: private_tuple_trait::PrivateTupleTrait {
+/// A Sealed trait for implementing multiple borrows for any number of arguments,
+/// Using a `GhostToken`.
+pub trait MultipleMutableBorrows: multiple_mutable_borrows_private_module::PrivateTupleTrait {
     /// The tuple of references you get as a result. For example, if Self is
     /// `(&'a GhostCell<'brand, T>, &'a GhostCell<'brand, Q>)` then `Result` is
     /// `(&'a mut T, &'a mut Q)`.
@@ -264,7 +265,7 @@ pub trait SealedTupleTrait: private_tuple_trait::PrivateTupleTrait {
     /// #   Example
     ///
     /// ```rust
-    /// use ghost_cell::{GhostToken, GhostCell, ghost_cell::SealedTupleTrait};
+    /// use ghost_cell::{GhostToken, GhostCell, ghost_cell::MultipleMutableBorrows};
     ///
     /// let n = 42;
     ///
@@ -273,7 +274,7 @@ pub trait SealedTupleTrait: private_tuple_trait::PrivateTupleTrait {
     ///     let cell2 = GhostCell::new(47);
     ///
     ///     let (reference1, reference2): (&mut i32, &mut i32)
-    ///         = (&cell1, &cell2).multiple_borrow_mut(&mut token).unwrap();
+    ///         = (&cell1, &cell2).borrow_mut(&mut token).unwrap();
     ///     *reference1 = 33;
     ///     *reference2 = 34;
     /// // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
@@ -283,18 +284,18 @@ pub trait SealedTupleTrait: private_tuple_trait::PrivateTupleTrait {
     ///
     /// assert_eq!((33, 34), value);
     /// ```
-    fn multiple_borrow_mut(self, token: Self::Token) -> Option<Self::Result>;
+    fn borrow_mut(self, token: Self::Token) -> Option<Self::Result>;
 }
 
 macro_rules! generate_public_instance {
     ( $($name:ident),* ; $($type_letter:ident),* ) => {
         #[cfg(feature = "experimental-multiple-mutable-borrows")]
-        impl<'a, 'brand, $($type_letter,)*> SealedTupleTrait for
+        impl<'a, 'brand, $($type_letter,)*> MultipleMutableBorrows for
                 ( $(&'a GhostCell<'brand, $type_letter>, )* )
         {
             type Result = ( $(&'a mut $type_letter, )* );
             type Token = &'a mut GhostToken<'brand>;
-            fn multiple_borrow_mut(self, _: Self::Token) -> Option<Self::Result> {
+            fn borrow_mut(self, _: Self::Token) -> Option<Self::Result> {
                 let ($($name,)*) = self;
                 // we require that the types are `Sized`, so no fat pointer problems.
                 check_distinct([ $( $name as *const _ as *const (), )* ])?;
@@ -320,7 +321,7 @@ generate_public_instance!(a, b, c, d, e, f, g, h, i ; T1, T2, T3, T4, T5, T6, T7
 generate_public_instance!(a, b, c, d, e, f, g, h, i, j ; T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
 
 #[cfg(feature = "experimental-multiple-mutable-borrows")]
-mod private_tuple_trait {
+mod multiple_mutable_borrows_private_module {
     pub trait PrivateTupleTrait {}
 
     macro_rules! generate_private_instance {
@@ -352,7 +353,7 @@ fn multiple_borrows_test() {
         let cell3 = GhostCell::new(7);
         let cell4 = GhostCell::new(9);
         let (reference1, reference2, reference3, reference4): (&mut i32, &mut i32, &mut i32, &mut i32)
-            = (&cell1, &cell2, &cell3, &cell4).multiple_borrow_mut(&mut token).unwrap();
+            = (&cell1, &cell2, &cell3, &cell4).borrow_mut(&mut token).unwrap();
         *reference1 = 33;
         *reference2 = 34;
         *reference3 = 35;
