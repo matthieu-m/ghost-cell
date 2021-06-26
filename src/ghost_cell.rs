@@ -232,94 +232,6 @@ impl<'brand, T: ?Sized> GhostCell<'brand, T> {
         //  -   `GhostCell<'_, T>` has the same in-memory representation as `T`.
         unsafe { mem::transmute(t) }
     }
-
-    #[cfg(feature = "experimental-multiple-mutable-borrows")]
-    /// Borrows two `GhostCell`s at the same time.
-    /// If they are the same `GhostCell`, returns `None`.
-    /// Only enabled under experimental feature "experimental-multiple-mutable-borrows".
-    ///
-    /// #   Example
-    ///
-    /// ```rust
-    /// use ghost_cell::{GhostToken, GhostCell};
-    ///
-    /// let n = 42;
-    ///
-    /// let value = GhostToken::new(|mut token| {
-    ///     let cell1 = GhostCell::new(42);
-    ///     let cell2 = GhostCell::new(47);
-    ///
-    ///     let (reference1, reference2): (&mut i32, &mut i32)
-    ///         = GhostCell::borrow_mut_twice(&cell1, &cell2, &mut token).unwrap();
-    ///     *reference1 = 33;
-    ///     *reference2 = 34;
-    /// // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
-    ///
-    ///     (*cell1.borrow(&token), *cell2.borrow(&token))
-    /// });
-    ///
-    /// assert_eq!((33, 34), value);
-    /// ```
-    pub fn borrow_mut_twice<'a, Q>(
-        cell_a: &'a GhostCell<'brand, T>,
-        cell_b: &'a GhostCell<'brand, Q>,
-        _: &'a mut GhostToken<'brand>
-    ) -> Option<(&'a mut T, &'a mut Q)> where T: Sized {
-        // we require that `T`, `Q` are `Sized`, so no fat pointer problems.
-        check_distinct([cell_a as *const _ as *const (), cell_b as *const _ as *const ()])?;
-        unsafe {
-            Some((
-                &mut *cell_a.value.get(),
-                &mut *cell_b.value.get()
-            ))
-        }
-    }
-
-    #[cfg(feature = "experimental-multiple-mutable-borrows")]
-    /// Borrows three `GhostCell`s at the same time.
-    /// If any of them are the same `GhostCell`, returns `None`.
-    /// Only enabled under experimental feature "experimental-multiple-mutable-borrows".
-    ///
-    /// #   Example
-    ///
-    /// ```rust
-    /// use ghost_cell::{GhostToken, GhostCell};
-    ///
-    /// let n = 42;
-    ///
-    /// let value = GhostToken::new(|mut token| {
-    ///     let cell1 = GhostCell::new(42);
-    ///     let cell2 = GhostCell::new(47);
-    ///     let cell3 = GhostCell::new(7);
-    ///
-    ///     let (reference1, reference2, reference3): (&mut i32, &mut i32, &mut i32)
-    ///         = GhostCell::borrow_mut_thrice(&cell1, &cell2, &cell3, &mut token).unwrap();
-    ///     *reference1 = 33;
-    ///     *reference2 = 34;
-    ///     *reference3 = 35;
-    /// // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
-    ///
-    ///     (*cell1.borrow(&token), *cell2.borrow(&token), *cell3.borrow(&token))
-    /// });
-    ///
-    /// assert_eq!((33, 34, 35), value);
-    /// ```
-    pub fn borrow_mut_thrice<'a, Q, R>(
-        cell_a: &'a GhostCell<'brand, T>,
-        cell_b: &'a GhostCell<'brand, Q>,
-        cell_c: &'a GhostCell<'brand, R>,
-        _: &'a mut GhostToken<'brand>
-    ) -> Option<(&'a mut T, &'a mut Q, &'a mut R)> where T: Sized {
-        // we require that `T`, `Q`, `R` are `Sized`, so no fat pointer problems.
-        check_distinct([cell_a as *const _ as *const (), cell_b as *const _ as *const (), cell_c as *const _ as *const ()])?;
-        unsafe {
-            Some((
-                &mut *cell_a.value.get(),
-                &mut *cell_b.value.get(),
-                &mut *cell_c.value.get()
-            ))
-        }
-    }
 }
 
 #[cfg(feature = "experimental-multiple-mutable-borrows")]
@@ -336,40 +248,59 @@ fn check_distinct<const N: usize>(arr: [*const (); N]) -> Option<()> {
     // TODO: if the array is large enough, sort the values instead.
 }
 
-
 #[cfg(feature = "experimental-multiple-mutable-borrows")]
-macro_rules! generate_multiple_borrow_mut {
-    ( $func_name:ident, $( $input_name:ident, $input_type:ident ),* ) => {
-        pub fn $func_name <'a, 'brand, $( $input_type ,)* >(
-            $( $input_name : &'a GhostCell<'brand, $input_type>, )*
-            _: &'a mut GhostToken<'brand>
-        ) -> Option<( $(&'a mut $input_type,)* )> where T: Sized {
-            // we require that the types are `Sized`, so no fat pointer problems.
-            check_distinct([ $( $input_name as *const (), )* ])?;
-            unsafe {
-                Some((
-                    $( &mut * $input_name.value.get() ,)*
-                ))
-            }
-        }
-    };
+/// A Sealed trait for implementing multiple borrows for any number of arguments.
+pub trait SealedTupleTrait: private_tuple_trait::PrivateTupleTrait {
+    /// The tuple of references you get as a result. For example, if Self is
+    /// `(&'a GhostCell<'brand, T>, &'a GhostCell<'brand, Q>)` then `Result` is
+    /// `(&'a mut T, &'a mut Q)`.
+    type Result;
+    /// The ghost token: A `&'a mut GhostToken<'brand>`.
+    type Token;
+    /// Borrows any number of `GhostCell`s at the same time.
+    /// If any of them are the same `GhostCell`, returns `None`.
+    /// Only enabled under experimental feature "experimental-multiple-mutable-borrows".
+    ///
+    /// #   Example
+    ///
+    /// ```rust
+    /// use ghost_cell::{GhostToken, GhostCell, ghost_cell::SealedTupleTrait};
+    ///
+    /// let n = 42;
+    ///
+    /// let value = GhostToken::new(|mut token| {
+    ///     let cell1 = GhostCell::new(42);
+    ///     let cell2 = GhostCell::new(47);
+    ///
+    ///     let (reference1, reference2): (&mut i32, &mut i32)
+    ///         = (&cell1, &cell2).multiple_borrow_mut(&mut token).unwrap();
+    ///     *reference1 = 33;
+    ///     *reference2 = 34;
+    /// // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
+    ///
+    ///     (*cell1.borrow(&token), *cell2.borrow(&token))
+    /// });
+    ///
+    /// assert_eq!((33, 34), value);
+    /// ```
+    fn multiple_borrow_mut(self, token: Self::Token) -> Option<Self::Result>;
 }
 
-#[cfg(feature = "experimental-multiple-mutable-borrows")]
-macro_rules! generate_multiple_borrow_mut_impl {
-    ( $func_name:ident, $first_name:ident, $first_type:ident, $( $input_name:ident, $input_type:ident ),* ) => {
-        impl<'brand, $first_type> GhostCell<'brand, $first_type> {
-            /// doc stub
-            pub fn $func_name <'a, $( $input_type ,)* >(
-                $first_name : &'a GhostCell<'brand, $first_type>,
-                $( $input_name : &'a GhostCell<'brand, $input_type>, )*
-                _: &'a mut GhostToken<'brand>
-            ) -> Option<( &'a mut $first_type, $(&'a mut $input_type,)* )> where $first_type: Sized {
+macro_rules! generate_public_instance {
+    ( $($name:ident),* ; $($type_letter:ident),* ) => {
+        #[cfg(feature = "experimental-multiple-mutable-borrows")]
+        impl<'a, 'brand, $($type_letter,)*> SealedTupleTrait for
+                ( $(&'a GhostCell<'brand, $type_letter>, )* )
+        {
+            type Result = ( $(&'a mut $type_letter, )* );
+            type Token = &'a mut GhostToken<'brand>;
+            fn multiple_borrow_mut(self, _: Self::Token) -> Option<Self::Result> {
+                let ($($name,)*) = self;
                 // we require that the types are `Sized`, so no fat pointer problems.
-                check_distinct([ $first_name as *const _ as *const(), $( $input_name as *const _ as *const (), )* ])?;
+                check_distinct([ $( $name as *const _ as *const (), )* ])?;
                 unsafe {
                     Some((
-                        &mut * $first_name.value.get(), $( &mut * $input_name.value.get() ,)*
+                        $( &mut * $name.value.get() ,)*
                     ))
                 }
             }
@@ -377,10 +308,60 @@ macro_rules! generate_multiple_borrow_mut_impl {
     };
 }
 
+generate_public_instance!(a ; T);
+generate_public_instance!(a, b ; T, Q);
+generate_public_instance!(a, b, c ; T, Q, R);
+generate_public_instance!(a, b, c, d ; T, Q, R, S);
+generate_public_instance!(a, b, c, d, e ; T1, T2, T3, T4, T5);
+generate_public_instance!(a, b, c, d, e, f ; T1, T2, T3, T4, T5, T6);
+generate_public_instance!(a, b, c, d, e, f, g ; T1, T2, T3, T4, T5, T6, T7);
+generate_public_instance!(a, b, c, d, e, f, g, h ; T1, T2, T3, T4, T5, T6, T7, T8);
+generate_public_instance!(a, b, c, d, e, f, g, h, i ; T1, T2, T3, T4, T5, T6, T7, T8, T9);
+generate_public_instance!(a, b, c, d, e, f, g, h, i, j ; T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
+
 #[cfg(feature = "experimental-multiple-mutable-borrows")]
-generate_multiple_borrow_mut_impl!(borrow_mut_four, call_a, T, call_b, Q, cell_c, R, call_d, S);
+mod private_tuple_trait {
+    pub trait PrivateTupleTrait {}
+
+    macro_rules! generate_private_instance {
+        ( $($type_letter:ident),* ) => {
+            impl<'a, 'brand, $($type_letter,)*> PrivateTupleTrait for
+                    ( $(&'a crate::ghost_cell::GhostCell<'brand, $type_letter>, )* )
+                {}
+        };
+    }
+
+    generate_private_instance!(T);
+    generate_private_instance!(T, Q);
+    generate_private_instance!(T, Q, R);
+    generate_private_instance!(T, Q, R, S);
+    generate_private_instance!(T1, T2, T3, T4, T5);
+    generate_private_instance!(T1, T2, T3, T4, T5, T6);
+    generate_private_instance!(T1, T2, T3, T4, T5, T6, T7);
+    generate_private_instance!(T1, T2, T3, T4, T5, T6, T7, T8);
+    generate_private_instance!(T1, T2, T3, T4, T5, T6, T7, T8, T9);
+    generate_private_instance!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
+}
+
 #[cfg(feature = "experimental-multiple-mutable-borrows")]
-generate_multiple_borrow_mut_impl!(borrow_mut_five, call_1, T1, call_2, T2, cell_3, T3, call_4, T4, cell_5, T5);
+#[test]
+fn multiple_borrows_test() {
+    let value = GhostToken::new(|mut token| {
+        let cell1 = GhostCell::new(42);
+        let cell2 = GhostCell::new(47);
+        let cell3 = GhostCell::new(7);
+        let cell4 = GhostCell::new(9);
+        let (reference1, reference2, reference3, reference4): (&mut i32, &mut i32, &mut i32, &mut i32)
+            = (&cell1, &cell2, &cell3, &cell4).multiple_borrow_mut(&mut token).unwrap();
+        *reference1 = 33;
+        *reference2 = 34;
+        *reference3 = 35;
+        *reference4 = 36;
+    // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
+        (*cell1.borrow(&token), *cell2.borrow(&token), *cell3.borrow(&token))
+    });
+    assert_eq!((33, 34, 35), value);
+}
 
 
 //  Safe, convenience methods
@@ -612,29 +593,5 @@ pub fn cell_get_mut_borrows_cell_mutably() {}
 /// });
 /// ```
 pub fn cell_from_mut_borrows_value_mutably() {}
-
-#[cfg(feature = "experimental-multiple-mutable-borrows")]
-///```rust
-///fn multiple_borrows_test() {
-///    use ghost_cell::{GhostToken, GhostCell};
-///    let n = 42;
-///    let value = GhostToken::new(|mut token| {
-///        let cell1 = GhostCell::new(42);
-///        let cell2 = GhostCell::new(47);
-///        let cell3 = GhostCell::new(7);
-///        let cell4 = GhostCell::new(9);
-///        let (reference1, reference2, reference3, reference4): (&mut i32, &mut i32, &mut i32, &mut i32)
-///            = GhostCell::borrow_mut_four(&cell1, &cell2, &cell3, &cell4, &mut token).unwrap();
-///        *reference1 = 33;
-///        *reference2 = 34;
-///        *reference3 = 35;
-///        *reference4 = 36;
-///    // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
-///        (*cell1.borrow(&token), *cell2.borrow(&token), *cell3.borrow(&token))
-///    });
-///    assert_eq!((33, 34, 35), value);
-///}
-///```
-pub fn multiple_borrows_test() {}
 
 } // mod compile_tests
