@@ -254,16 +254,24 @@ mod multiple_borrows {
     }
 
     /// A Sealed trait for implementing multiple borrows for any number of arguments,
-    /// Using a `GhostToken`.
-    pub trait MultipleMutableBorrows<'a, 'brand>:
+    /// Using a `GhostToken<'a, 'brand>`.
+    /// Implemented for a mixture of tuple and array types.
+    /// Only enabled under experimental feature "experimental-multiple-mutable-borrows".
+    pub trait GhostBorrowMut<'a, 'brand>:
         multiple_mutable_borrows_private_module::PrivateTrait {
         /// The tuple of references you get as a result. For example, if Self is
         /// `(&'a GhostCell<'brand, T>, &'a GhostCell<'brand, Q>)` then `Result` is
-        /// `(&'a mut T, &'a mut Q)`.
+        /// `Option<(&'a mut T, &'a mut Q)>`.
+        ///
+        /// The Result is an `Option`, if it can't be assumed at compile time
+        /// that the cells are distinct, and for one element tuples.
         type Result;
         /// Borrows any number of `GhostCell`s at the same time.
         /// If any of them are the same `GhostCell`, returns `None`.
         /// Only enabled under experimental feature "experimental-multiple-mutable-borrows".
+        ///
+        /// Receives a `&'a mut GhostToken<'brand>` to ensure the caller has unique ownership
+        /// of the values in the cells.
         ///
         /// #   Example
         ///
@@ -290,19 +298,25 @@ mod multiple_borrows {
         fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Self::Result;
     }
 
-    impl<'a, 'brand, T> MultipleMutableBorrows<'a, 'brand> for &'a [GhostCell<'brand, T>] {
+    impl<'a, 'brand, T> GhostBorrowMut<'a, 'brand> for &'a [GhostCell<'brand, T>] {
         type Result = &'a mut [T];
 
         fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Self::Result {
+            // Safety: the types have the same representation (`GhostCell` is marked `repr(transparent)`).
+            // In addition, thanks to the token, we have unique ownership of the values inside the `GhostCell`.
+            // All of the GhostCells are distinct, since they must be adjacent in memory.
             #[allow(mutable_transmutes)]
             unsafe { core::mem::transmute::<Self, Self::Result>(self) }
         }
     }
 
-    impl<'a, 'brand, T, const N: usize> MultipleMutableBorrows<'a, 'brand> for &'a [GhostCell<'brand, T>; N] {
+    impl<'a, 'brand, T, const N: usize> GhostBorrowMut<'a, 'brand> for &'a [GhostCell<'brand, T>; N] {
         type Result = &'a mut [T; N];
 
         fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Self::Result {
+            // Safety: the types have the same representation (`GhostCell` is marked `repr(transparent)`).
+            // In addition, thanks to the token, we have unique ownership of the values inside the `GhostCell`.
+            // All of the GhostCells are distinct, since they must be adjacent in memory.
             #[allow(mutable_transmutes)]
             unsafe { core::mem::transmute::<Self, Self::Result>(self) }
         }
@@ -344,7 +358,7 @@ mod multiple_borrows {
 
     macro_rules! generate_public_instance {
         ( $($name:ident),* ; $($type_letter:ident),* ) => {
-            impl<'a, 'brand, $($type_letter,)*> MultipleMutableBorrows<'a, 'brand> for
+            impl<'a, 'brand, $($type_letter,)*> GhostBorrowMut<'a, 'brand> for
                     ( $(&'a GhostCell<'brand, $type_letter>, )* )
             {
                 type Result = Option<( $(&'a mut $type_letter, )* )>;
@@ -352,6 +366,8 @@ mod multiple_borrows {
                     let ($($name,)*) = self;
                     // we require that the types are `Sized`, so no fat pointer problems.
                     check_distinct([ $( $name as *const _ as *const (), )* ])?;
+                    // Safety: Thanks to the token, we have unique ownership of the values inside the `GhostCell`.
+                    // The GhostCells have been checked to be distinct.
                     unsafe {
                         Some((
                             $( &mut * $name.value.get() ,)*
@@ -360,11 +376,14 @@ mod multiple_borrows {
                 }
             }
 
-            impl<'a, 'brand, $($type_letter,)*> MultipleMutableBorrows<'a, 'brand> for
+            impl<'a, 'brand, $($type_letter,)*> GhostBorrowMut<'a, 'brand> for
                     &'a ( $(GhostCell<'brand, $type_letter>, )* )
             {
                 type Result = &'a mut ( $($type_letter, )* );
                 fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Self::Result {
+                    // Safety: the types have the same representation (`GhostCell` is marked `repr(transparent)`).
+                    // In addition, thanks to the token, we have unique ownership of the values inside the `GhostCell`.
+                    // All of the GhostCells are distinct, since they must be adjacent in memory.
                     #[allow(mutable_transmutes)]
                     unsafe { core::mem::transmute::<Self, Self::Result>(self) }
                 }
