@@ -64,6 +64,7 @@ unsafe impl<'brand> Sync for GhostToken<'brand> {}
 /// -   Unique access to the cell allows unimpeded access to the contained value.
 /// -   Shared access to the cell requires mediating access through the associated `GhostToken<'x, T>` which will
 ///     enforce at compile-time the Aliasing XOR Mutability safety property.
+#[repr(transparent)]
 pub struct GhostCell<'brand, T: ?Sized> {
     _marker: InvariantLifetime<'brand>,
     value: UnsafeCell<T>,
@@ -255,7 +256,7 @@ mod multiple_borrows {
     /// A Sealed trait for implementing multiple borrows for any number of arguments,
     /// Using a `GhostToken`.
     pub trait MultipleMutableBorrows<'a, 'brand>:
-        multiple_mutable_borrows_private_module::PrivateTupleTrait {
+        multiple_mutable_borrows_private_module::PrivateTrait {
         /// The tuple of references you get as a result. For example, if Self is
         /// `(&'a GhostCell<'brand, T>, &'a GhostCell<'brand, Q>)` then `Result` is
         /// `(&'a mut T, &'a mut Q)`.
@@ -289,6 +290,24 @@ mod multiple_borrows {
         fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Self::Result;
     }
 
+    impl<'a, 'brand, T> MultipleMutableBorrows<'a, 'brand> for &'a [GhostCell<'brand, T>] {
+        type Result = &'a mut [T];
+
+        fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Self::Result {
+            #[allow(mutable_transmutes)]
+            unsafe { core::mem::transmute::<Self, Self::Result>(self) }
+        }
+    }
+
+    impl<'a, 'brand, T, const N: usize> MultipleMutableBorrows<'a, 'brand> for &'a [GhostCell<'brand, T>; N] {
+        type Result = &'a mut [T; N];
+
+        fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Self::Result {
+            #[allow(mutable_transmutes)]
+            unsafe { core::mem::transmute::<Self, Self::Result>(self) }
+        }
+    }
+
     macro_rules! generate_public_instance {
         ( $($name:ident),* ; $($type_letter:ident),* ) => {
             impl<'a, 'brand, $($type_letter,)*> MultipleMutableBorrows<'a, 'brand> for
@@ -306,6 +325,16 @@ mod multiple_borrows {
                     }
                 }
             }
+
+            impl<'a, 'brand, $($type_letter,)*> MultipleMutableBorrows<'a, 'brand> for
+                    &'a ( $(GhostCell<'brand, $type_letter>, )* )
+            {
+                type Result = &'a mut ( $($type_letter, )* );
+                fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Self::Result {
+                    #[allow(mutable_transmutes)]
+                    unsafe { core::mem::transmute::<Self, Self::Result>(self) }
+                }
+            }
         };
     }
 
@@ -321,13 +350,22 @@ mod multiple_borrows {
     generate_public_instance!(a, b, c, d, e, f, g, h, i, j ; T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
 
     mod multiple_mutable_borrows_private_module {
-        pub trait PrivateTupleTrait {}
+        use crate::ghost_cell::*;
+        pub trait PrivateTrait {}
+        
+        impl<'a, 'brand, T> PrivateTrait for &'a [GhostCell<'brand, T>] {}
+        impl<'a, 'brand, T, const N: usize> PrivateTrait for &'a [GhostCell<'brand, T>; N] {}
+        impl<'a, 'brand, T, const N: usize> PrivateTrait for [&'a GhostCell<'brand, T>; N] {}
 
         macro_rules! generate_private_instance {
             ( $($type_letter:ident),* ) => {
-                impl<'a, 'brand, $($type_letter,)*> PrivateTupleTrait for
-                        ( $(&'a crate::ghost_cell::GhostCell<'brand, $type_letter>, )* )
-                    {}
+                impl<'a, 'brand, $($type_letter,)*> PrivateTrait for
+                    ( $(&'a crate::ghost_cell::GhostCell<'brand, $type_letter>, )* )
+                {}
+                
+                impl<'a, 'brand, $($type_letter,)*> PrivateTrait for
+                    &'a ( $(crate::ghost_cell::GhostCell<'brand, $type_letter>, )* )
+                {} 
             };
         }
 
