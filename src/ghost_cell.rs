@@ -308,6 +308,40 @@ mod multiple_borrows {
         }
     }
 
+    // almost working implementation
+    /*
+    impl<'a, 'brand, T, const N: usize> MultipleMutableBorrows<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
+        type Result = Option<[&'a mut T; N]>;
+
+        fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Self::Result {
+            use core::mem::*;
+            check_distinct(unsafe { core::mem::transmute::<&Self, &[*const (); N]>(&self) })?;
+            // Safety: `MaybeUninit<&'a mut T>` does not require initialization.
+            let res: [MaybeUninit<&'a mut T>; N] = unsafe {
+                MaybeUninit::uninit().assume_init()
+            };
+
+            // duplicating the code of `check_distinct` because it can't get called here
+            for i in 0..N {
+                for j in 0..i {
+                    if core::ptr::eq(self[i], self[j]) {
+                        return None;
+                    }
+                }
+            }
+
+            for i in 0..N {
+                res[i] = core::mem::MaybeUninit::new(
+                    unsafe { transmute::<&'a GhostCell<'brand, T>, &'a mut T>(self[i]) }
+                );
+            }
+
+            Some(unsafe { MaybeUninit::array_assume_init(res) } )
+        }
+    }
+    */
+    
+
     macro_rules! generate_public_instance {
         ( $($name:ident),* ; $($type_letter:ident),* ) => {
             impl<'a, 'brand, $($type_letter,)*> MultipleMutableBorrows<'a, 'brand> for
