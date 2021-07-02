@@ -276,7 +276,7 @@ mod multiple_borrows {
         /// #   Example
         ///
         /// ```rust
-        /// use ghost_cell::{GhostToken, GhostCell, ghost_cell::MultipleMutableBorrows};
+        /// use ghost_cell::{GhostToken, GhostCell, ghost_cell::GhostBorrowMut};
         ///
         /// let n = 42;
         ///
@@ -429,23 +429,79 @@ mod multiple_borrows {
         generate_private_instance!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
     }
 
-    #[test]
-    fn multiple_borrows_test() {
-        let value = GhostToken::new(|mut token| {
-            let cell1 = GhostCell::new(42);
-            let cell2 = GhostCell::new(47);
-            let cell3 = GhostCell::new(7);
-            let cell4 = GhostCell::new(9);
-            let (reference1, reference2, reference3, reference4): (&mut i32, &mut i32, &mut i32, &mut i32)
-                = (&cell1, &cell2, &cell3, &cell4).borrow_mut(&mut token).unwrap();
-            *reference1 = 33;
-            *reference2 = 34;
-            *reference3 = 35;
-            *reference4 = 36;
-        // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
-            (*cell1.borrow(&token), *cell2.borrow(&token), *cell3.borrow(&token))
-        });
-        assert_eq!((33, 34, 35), value);
+    #[doc(hidden)]
+    mod multiple_borrows_tests {
+        use crate::{*, ghost_cell::GhostBorrowMut};
+        #[test]
+        fn multiple_borrows_tuple() {
+            let value = GhostToken::new(|mut token| {
+                let cell1 = GhostCell::new(42);
+                let cell2 = GhostCell::new(47);
+                let cell3 = GhostCell::new(7);
+                let cell4 = GhostCell::new(9);
+                let (reference1, reference2, reference3, reference4): (&mut i32, &mut i32, &mut i32, &mut i32)
+                    = (&cell1, &cell2, &cell3, &cell4).borrow_mut(&mut token).unwrap();
+                *reference1 = 33;
+                *reference2 = 34;
+                *reference3 = 35;
+                *reference4 = 36;
+            // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
+                (*cell1.borrow(&token), *cell2.borrow(&token), *cell3.borrow(&token))
+            });
+            assert_eq!((33, 34, 35), value);
+        }
+
+        #[test]
+        #[should_panic]
+        fn multiple_borrows_tuple_alisased() {
+            GhostToken::new(|mut token| {
+                let cell1 = GhostCell::new(42);
+                let cell2 = GhostCell::new(47);
+                let cell3 = GhostCell::new(7);
+                let _: (&mut i32, &mut i32, &mut i32, &mut i32)
+                    = (&cell1, &cell2, &cell3, &cell2).borrow_mut(&mut token).unwrap();
+            });
+        }
+
+        #[test]
+        fn multiple_borrows_tuple_ref() {
+            let value = GhostToken::new(|mut token| {
+                let cell1 = GhostCell::new(42);
+                let cell2 = GhostCell::new(47);
+                let cell3 = GhostCell::new(7);
+                let cell4 = GhostCell::new(9);
+                let tuple = (cell1, cell2, cell3, cell4);
+                let reference: &mut (i32, i32, i32, i32)
+                    = tuple.borrow_mut(&mut token).unwrap();
+                reference.0 = 33;
+                reference.1 = 34;
+                reference.2 = 35;
+                reference.3 = 36;
+            // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
+                (*tuple.0.borrow(&token), *tuple.1.borrow(&token), *tuple.2.borrow(&token))
+            });
+            assert_eq!((33, 34, 35), value);
+        }
+
+        #[test]
+        fn multiple_borrows_array_ref() {
+            let value = GhostToken::new(|mut token| {
+                let cell1 = GhostCell::new(42);
+                let cell2 = GhostCell::new(47);
+                let cell3 = GhostCell::new(7);
+                let cell4 = GhostCell::new(9);
+                let array = [cell1, cell2, cell3, cell4];
+                let reference: &mut [i32; 4]
+                    = array.borrow_mut(&mut token).unwrap();
+                reference[0] = 33;
+                reference[1] = 34;
+                reference[2] = 35;
+                reference[3] = 36;
+            // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
+                (*array[0].borrow(&token), *array[1].borrow(&token), *array[2].borrow(&token))
+            });
+            assert_eq!((33, 34, 35), value);
+        }
     }
 }
 
