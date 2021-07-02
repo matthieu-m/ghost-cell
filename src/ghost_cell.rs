@@ -240,16 +240,17 @@ pub use multiple_borrows::*;
 #[cfg(feature = "experimental-multiple-mutable-borrows")]
 mod multiple_borrows {
     use crate::ghost_cell::*;
-    /// Returns `Some(())` if the inputs are distinct, and `None` otherwise.
-    fn check_distinct<const N: usize>(arr: [*const (); N]) -> Option<()> {
+
+    /// Returns `Err(GhostAliasingError())` if the inputs are distinct, and `Ok(())` otherwise.
+    fn check_distinct<const N: usize>(arr: [*const (); N]) -> Result<(), GhostAliasingError> {
         for i in 0..N {
             for j in 0..i {
                 if core::ptr::eq(arr[i], arr[j]) {
-                    return None;
+                    return Err(GhostAliasingError());
                 }
             }
         }
-        Some(())
+        Ok(())
         // TODO: if the array is large enough, sort the values instead.
     }
 
@@ -261,11 +262,10 @@ mod multiple_borrows {
         multiple_mutable_borrows_private_module::PrivateTrait {
         /// The tuple of references you get as a result. For example, if Self is
         /// `(&'a GhostCell<'brand, T>, &'a GhostCell<'brand, Q>)` then `Result` is
-        /// `Option<(&'a mut T, &'a mut Q)>`.
-        ///
-        /// The Result is an `Option`, if it can't be assumed at compile time
-        /// that the cells are distinct, and for one element tuples.
+        /// `(&'a mut T, &'a mut Q)`.
         type Result;
+        /// The error case. Is `VoidError` if an error is impossible, and `GhostAliasingError` otherwise.
+        type Error : Into<GhostAliasingError>;
         /// Borrows any number of `GhostCell`s at the same time.
         /// If any of them are the same `GhostCell`, returns `None`.
         /// Only enabled under experimental feature "experimental-multiple-mutable-borrows".
@@ -295,83 +295,78 @@ mod multiple_borrows {
         ///
         /// assert_eq!((33, 34), value);
         /// ```
-        fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Self::Result;
+        fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error>;
     }
+
+    /// A void struct. Used as the error case when The error case is impossible.
+    #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+    pub enum VoidError{}
+    impl VoidError {
+        /// Returns any type. Can't happen since `VoidError` can't be constructed.
+        pub fn absurd<T>(self) -> T {
+            match self {}
+            // could also be implemented as:
+            // unsafe { core::hint::unreachable_unchecked() }
+        }
+    }
+    // For uniformity, if anyone wants it. Can't do
+    // impl<T> From<VoidError> for T
+    // because of conflicting implementations.
+    impl From<VoidError> for GhostAliasingError {
+        fn from(e: VoidError) -> Self {
+            e.absurd()
+        }
+    }
+
+    /// An error signifying that two `GhostCell`s that need to be distinct were actually
+    /// the same cell.
+    #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+    pub struct GhostAliasingError();
 
     impl<'a, 'brand, T> GhostBorrowMut<'a, 'brand> for &'a [GhostCell<'brand, T>] {
         type Result = &'a mut [T];
+        type Error = VoidError;
 
-        fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Self::Result {
+        fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
             // Safety: the types have the same representation (`GhostCell` is marked `repr(transparent)`).
             // In addition, thanks to the token, we have unique ownership of the values inside the `GhostCell`.
             // All of the GhostCells are distinct, since they must be adjacent in memory.
             #[allow(mutable_transmutes)]
-            unsafe { core::mem::transmute::<Self, Self::Result>(self) }
+            Ok(unsafe { core::mem::transmute::<Self, Self::Result>(self) })
         }
     }
 
     impl<'a, 'brand, T, const N: usize> GhostBorrowMut<'a, 'brand> for &'a [GhostCell<'brand, T>; N] {
         type Result = &'a mut [T; N];
+        type Error = VoidError;
 
-        fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Self::Result {
+        fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
             // Safety: the types have the same representation (`GhostCell` is marked `repr(transparent)`).
             // In addition, thanks to the token, we have unique ownership of the values inside the `GhostCell`.
             // All of the GhostCells are distinct, since they must be adjacent in memory.
             #[allow(mutable_transmutes)]
-            unsafe { core::mem::transmute::<Self, Self::Result>(self) }
+            Ok(unsafe { core::mem::transmute::<Self, Self::Result>(self) })
         }
     }
-
-    // almost working implementation
-    /*
-    impl<'a, 'brand, T, const N: usize> MultipleMutableBorrows<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
-        type Result = Option<[&'a mut T; N]>;
-
-        fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Self::Result {
-            use core::mem::*;
-            check_distinct(unsafe { core::mem::transmute::<&Self, &[*const (); N]>(&self) })?;
-            // Safety: `MaybeUninit<&'a mut T>` does not require initialization.
-            let res: [MaybeUninit<&'a mut T>; N] = unsafe {
-                MaybeUninit::uninit().assume_init()
-            };
-
-            // duplicating the code of `check_distinct` because it can't get called here
-            for i in 0..N {
-                for j in 0..i {
-                    if core::ptr::eq(self[i], self[j]) {
-                        return None;
-                    }
-                }
-            }
-
-            for i in 0..N {
-                res[i] = core::mem::MaybeUninit::new(
-                    unsafe { transmute::<&'a GhostCell<'brand, T>, &'a mut T>(self[i]) }
-                );
-            }
-
-            Some(unsafe { MaybeUninit::array_assume_init(res) } )
-        }
-    }
-    */
-    
 
     macro_rules! generate_public_instance {
         ( $($name:ident),* ; $($type_letter:ident),* ) => {
             impl<'a, 'brand, $($type_letter,)*> GhostBorrowMut<'a, 'brand> for
                     ( $(&'a GhostCell<'brand, $type_letter>, )* )
             {
-                type Result = Option<( $(&'a mut $type_letter, )* )>;
-                fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Self::Result {
+                type Result = ( $(&'a mut $type_letter, )* );
+                type Error = GhostAliasingError;
+
+                fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
                     let ($($name,)*) = self;
                     // we require that the types are `Sized`, so no fat pointer problems.
                     check_distinct([ $( $name as *const _ as *const (), )* ])?;
                     // Safety: Thanks to the token, we have unique ownership of the values inside the `GhostCell`.
                     // The GhostCells have been checked to be distinct.
                     unsafe {
-                        Some((
-                            $( &mut * $name.value.get() ,)*
-                        ))
+                        Ok(
+                           ( $( &mut * $name.value.get() ,)* )
+                        )
                     }
                 }
             }
@@ -380,12 +375,13 @@ mod multiple_borrows {
                     &'a ( $(GhostCell<'brand, $type_letter>, )* )
             {
                 type Result = &'a mut ( $($type_letter, )* );
-                fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Self::Result {
+                type Error = VoidError;
+                fn borrow_mut(self, _: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
                     // Safety: the types have the same representation (`GhostCell` is marked `repr(transparent)`).
                     // In addition, thanks to the token, we have unique ownership of the values inside the `GhostCell`.
                     // All of the GhostCells are distinct, since they must be adjacent in memory.
                     #[allow(mutable_transmutes)]
-                    unsafe { core::mem::transmute::<Self, Self::Result>(self) }
+                    Ok(unsafe { core::mem::transmute::<Self, Self::Result>(self) })
                 }
             }
         };
@@ -408,7 +404,6 @@ mod multiple_borrows {
         
         impl<'a, 'brand, T> PrivateTrait for &'a [GhostCell<'brand, T>] {}
         impl<'a, 'brand, T, const N: usize> PrivateTrait for &'a [GhostCell<'brand, T>; N] {}
-        impl<'a, 'brand, T, const N: usize> PrivateTrait for [&'a GhostCell<'brand, T>; N] {}
 
         macro_rules! generate_private_instance {
             ( $($type_letter:ident),* ) => {
