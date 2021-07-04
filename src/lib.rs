@@ -42,6 +42,10 @@ pub mod ghost_cell;
 
 pub use self::ghost_cell::{GhostCell, GhostToken};
 
+pub mod ghost_borrow;
+
+pub use self::ghost_borrow::GhostBorrow;
+
 #[cfg(feature = "experimental-multiple-mutable-borrows")]
 pub mod ghost_borrow_mut;
 
