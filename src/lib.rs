@@ -42,6 +42,12 @@ pub mod ghost_cell;
 
 pub use self::ghost_cell::{GhostCell, GhostToken};
 
+#[cfg(feature = "experimental-multiple-mutable-borrows")]
+pub mod ghost_borrow_mut;
+
+#[cfg(feature = "experimental-multiple-mutable-borrows")]
+pub use self::ghost_borrow_mut::{GhostBorrowMut, GhostAliasingError, VoidError};
+
 #[cfg(feature = "experimental-ghost-cursor")]
 pub mod ghost_cursor;
 
