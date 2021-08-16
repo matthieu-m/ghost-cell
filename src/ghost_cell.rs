@@ -43,6 +43,7 @@ impl<'brand> GhostToken<'brand> {
     ///
     /// assert_eq!(33, value);
     /// ```
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<R, F>(fun: F) -> R
     where
         for <'new_brand> F: FnOnce(GhostToken<'new_brand>) -> R

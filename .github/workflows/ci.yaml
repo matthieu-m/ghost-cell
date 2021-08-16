@@ -11,8 +11,7 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     env:
-      # Emit backtraces on panics.
-      RUST_BACKTRACE: 1
+      RUST_BACKTRACE: 1 # Emit backtraces on panics.
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -30,4 +29,4 @@ jobs:
           toolchain: stable
           profile: minimal
           components: clippy
-      - run: cargo clippy -- -D warnings
+      - run: cargo clippy -- -D warnings # Deny clippy warnings
