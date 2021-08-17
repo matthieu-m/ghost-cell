@@ -1,0 +1,32 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: 1 # Emit backtraces on panics.
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+      - run: cargo test --verbose --workspace
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          components: clippy
+      - run: cargo clippy -- -D warnings # Deny clippy warnings
