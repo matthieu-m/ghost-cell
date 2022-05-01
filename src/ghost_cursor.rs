@@ -182,6 +182,7 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     ///     }
     /// });
     /// ```
+    #[allow(clippy::result_unit_err)]
     pub fn move_mut<F>(&mut self, fun: F) -> Result<(), ()>
     where
         F: FnOnce(&'a T) -> Option<&'a GhostCell<'brand, T>>,

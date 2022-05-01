@@ -1,26 +1,33 @@
 name: ci
+
 on:
   pull_request:
   push:
     branches:
       - master
+
 env:
   CARGO_TERM_COLOR: always
+
 jobs:
   test:
-    name: test
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - nightly
     env:
       RUST_BACKTRACE: 1 # Emit backtraces on panics.
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ matrix.rust }}
           profile: minimal
-      - run: cargo test --verbose --workspace
+      - run: cargo test --all-features --verbose
+
   lint:
-    name: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -29,4 +36,15 @@ jobs:
           toolchain: stable
           profile: minimal
           components: clippy
-      - run: cargo clippy -- -D warnings # Deny clippy warnings
+      - run: cargo clippy --all-features -- -D warnings # Deny clippy warnings
+
+  miri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Miri
+        run: |
+          rustup toolchain install nightly --component miri
+          rustup override set nightly
+          cargo miri setup
+      - run: cargo miri test all-features --verbose
