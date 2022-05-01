@@ -13,7 +13,7 @@ use crate::ghost_cell::*;
 pub trait GhostBorrow<'a, 'brand> {
     /// The references you get as a result.
     ///
-    /// For example, if Self is `(&'a GhostCell<'brand, T0>, &'a GhostCell<'brand, T1>)` then `Result` is
+    /// For example, if `Self` is `(&'a GhostCell<'brand, T0>, &'a GhostCell<'brand, T1>)` then `Result` is
     /// `(&'a T0, &'a T1)`.
     type Result;
 
@@ -45,7 +45,7 @@ impl<'a, 'brand, T> GhostBorrow<'a, 'brand> for &'a [GhostCell<'brand, T>] {
         //  Safety:
         //  -   Shared access to the `GhostToken` ensures shared access to the cells' content.
         //  -   `GhostCell` is `repr(transparent)`, hence `T` and `GhostCell<T>` have the same memory representation.
-       unsafe { mem::transmute::<Self, Self::Result>(self) }
+        unsafe { mem::transmute::<Self, Self::Result>(self) }
     }
 }
 

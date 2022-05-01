@@ -17,7 +17,7 @@
 //! This is the crux of the issue, and the most likely place for unsoundness in the whole scheme.
 //!
 //! Let us start by a broken example to better understand what we are looking for. Let us imagine a simple doubly linked
-//! list data-structure where each node has an optional previous and next fields to point to the previous and next nodes
+//! list data structure where each node has an optional previous and next field to point to the previous and next node,
 //! respectively.
 //!
 //! Imagine the following set-up with 2 nodes `a` and `b`:
@@ -27,7 +27,7 @@
 //!
 //! Any method which allows both obtaining a reference to `b` and simultaneously a mutable reference to `a` is unsound,
 //! for owning a mutable reference to `a` allows setting both of its `prev` and `next` fields to `None`, dropping `b`,
-//! and of course retaining a reference to a dropped element is opening the door to Undefined Behavior.
+//! and of course retaining a reference to a dropped element is opening the door to undefined behavior.
 //!
 //! Hence, the very stringent invariant that the `GhostCursor` must enforce is that apart from the currently mutable
 //! element, no reference to other elements with no _separate_ anchoring ownership paths to the stack can be observed.
@@ -54,7 +54,7 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     pub fn new(token: &'a mut GhostToken<'brand>, cell: Option<&'a GhostCell<'brand, T>>) -> Self {
         let token = NonNull::from(token);
 
-        Self { token, cell, }
+        Self { token, cell }
     }
 
     /// Returns a mutable reference to the current element, if any.
@@ -116,7 +116,7 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     /// ```
     pub fn borrow(&self) -> Option<&T> {
         //  Safety:
-        //  -   Borrows `self`, therefore ensuring that no mutably borrow of the token exists.
+        //  -   Borrows `self`, therefore ensuring that no mutable borrow of the token exists.
         //  -   Restricts the lifetime of `token` to that of `self`.
         let token = unsafe { as_ref(self.token) };
 
@@ -144,7 +144,7 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     /// ```
     pub fn borrow_mut(&mut self) -> Option<&mut T> {
         //  Safety:
-        //  -   Borrows `self` mutably, therefore ensuring that no borrow of the token exists.
+        //  -   Borrows `self` mutably, therefore ensuring that no other borrow of the token exists.
         //  -   Restricts the lifetime of `token` to that of `self.`
         let token = unsafe { as_mut(self.token) };
 
@@ -157,7 +157,7 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     /// -   There is no current cell.
     /// -   `fun` returns no cell.
     ///
-    /// In case of error, the current cell is not modified.
+    /// In case of an error, the current cell is not modified.
     ///
     /// #   Example
     ///
@@ -205,7 +205,7 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     /// -   There is no current cell.
     /// -   `fun` returns no cell.
     ///
-    /// In case of error, the current cursor is returned.
+    /// In case of an error, the current cursor is returned.
     ///
     /// #   Example
     ///
@@ -252,7 +252,7 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
         let cell = self.cell.ok_or(())?;
         let cell = fun(cell.borrow(token_mut)).ok_or(())?;
 
-        Ok(GhostCursor { token: self.token, cell: Some(cell), })
+        Ok(GhostCursor { token: self.token, cell: Some(cell) })
     }
 }
 
