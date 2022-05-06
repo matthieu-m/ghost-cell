@@ -25,6 +25,7 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
           profile: minimal
+          override: true
       - run: cargo test --all-features --verbose
 
   lint:
@@ -36,6 +37,7 @@ jobs:
           toolchain: stable
           profile: minimal
           components: clippy
+          override: true
       - run: cargo clippy --all-features -- -D warnings # Deny clippy warnings
 
   miri:
