@@ -1,4 +1,4 @@
-//! The `GhostBorrowMut` trait, which allows mutably borrowing multiple `GhostCell` simultaneously.
+//! The `GhostBorrowMut` trait, which allows mutably borrowing multiple `GhostCell`s simultaneously.
 //!
 //! This module implement the `GhostBorrowMut` trait for:
 //!
@@ -26,7 +26,7 @@ pub struct GhostAliasingError();
 
 /// A void struct. Used as the error case when The error case is impossible.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
-pub enum VoidError{}
+pub enum VoidError {}
 
 impl VoidError {
     /// Returns any type. Can't happen since `VoidError` can't be constructed.
@@ -56,14 +56,14 @@ impl From<VoidError> for GhostAliasingError {
 pub trait GhostBorrowMut<'a, 'brand> {
     /// The references you get as a result.
     ///
-    /// For example, if Self is `(&'a GhostCell<'brand, T0>, &'a GhostCell<'brand, T1>)` then `Result` is
+    /// For example, if `Self` is `(&'a GhostCell<'brand, T0>, &'a GhostCell<'brand, T1>)` then `Result` is
     /// `(&'a mut T0, &'a mut T1)`.
     type Result;
 
     /// The error case.
     ///
     /// Use a never type such as `!` or `VoidError` if an error is impossible, and `GhostAliasingError` otherwise.
-    type Error : Into<GhostAliasingError>;
+    type Error: Into<GhostAliasingError>;
 
     /// Borrows any number of `GhostCell`s mutably at the same time.
     ///

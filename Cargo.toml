@@ -10,7 +10,7 @@ keywords = ["experimental", "aliasing", "borrowing"]
 categories = ["memory-management", "no-std"]
 
 [features]
-# Enables the use of unproven GhostCursor.
+# Enables the use of the unproven GhostCursor.
 experimental-ghost-cursor = []
 # Enables the use of unproven multiple mutable borrows.
 experimental-multiple-mutable-borrows = []

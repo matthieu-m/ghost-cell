@@ -1,9 +1,9 @@
 //! This library provides an implementation of `GhostCell` and its `GhostToken` as per
-//! http://plv.mpi-sws.org/rustbelt/ghostcell/ as well as some extensions.
+//! <https://plv.mpi-sws.org/rustbelt/ghostcell/> as well as some extensions.
 //!
 //! #   Safety
 //!
-//! The actual implementation of `GhostCell` is found at https://gitlab.mpi-sws.org/FP/ghostcell/-/tree/master/ghostcell
+//! The actual implementation of `GhostCell` is found at <https://gitlab.mpi-sws.org/FP/ghostcell/-/tree/master/ghostcell>
 //! and has been proven safe. I have carefully checked that this implementation faithfully reproduces the safety
 //! guarantees.
 //!
@@ -50,7 +50,7 @@ pub use self::ghost_borrow::GhostBorrow;
 pub mod ghost_borrow_mut;
 
 #[cfg(feature = "experimental-multiple-mutable-borrows")]
-pub use self::ghost_borrow_mut::{GhostBorrowMut, GhostAliasingError, VoidError};
+pub use self::ghost_borrow_mut::{GhostAliasingError, GhostBorrowMut, VoidError};
 
 #[cfg(feature = "experimental-ghost-cursor")]
 pub mod ghost_cursor;
