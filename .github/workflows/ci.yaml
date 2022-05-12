@@ -49,4 +49,4 @@ jobs:
           rustup toolchain install nightly --component miri
           rustup override set nightly
           cargo miri setup
-      - run: cargo miri test all-features --verbose
+      - run: cargo miri test --all-features --verbose
