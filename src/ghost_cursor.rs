@@ -76,13 +76,13 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     ///
     /// #   Safety
     ///
-    /// The token is still immutably borrowed for as long as the return value lives.
-    pub fn into_parts(self) -> (&'a GhostToken<'brand>, Option<&'a GhostCell<'brand, T>>) {
+    /// The token is still mutably borrowed for as long as the return value lives.
+    pub fn into_parts(self) -> (&'a mut GhostToken<'brand>, Option<&'a GhostCell<'brand, T>>) {
         //  Safety:
         //  -   `self` is not borrowed, therefore the token is not borrowed.
         //  -   The lifetime of the result ensures that the token and cell remain borrowed for as long as the result
         //      exists.
-        (unsafe { as_ref(self.token) }, self.cell)
+        (unsafe { as_mut(self.token) }, self.cell)
     }
 
     /// Returns a reference to the token.
@@ -185,7 +185,7 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     #[allow(clippy::result_unit_err)]
     pub fn move_mut<F>(&mut self, fun: F) -> Result<(), ()>
     where
-        F: FnOnce(&'a T) -> Option<&'a GhostCell<'brand, T>>,
+        F: FnOnce(&T) -> Option<&GhostCell<'brand, T>>,
     {
         //  Safety:
         //  -   Borrows `self` mutably, therefore ensuring that no borrow of the token exists.
@@ -233,7 +233,7 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     /// ```
     pub fn move_into<U, F>(mut self, fun: F) -> Result<GhostCursor<'a, 'brand, U>, Self>
     where
-        F: FnOnce(&'a T) -> Option<&'a GhostCell<'brand, U>>,
+        F: FnOnce(&T) -> Option<&GhostCell<'brand, U>>,
     {
         let result = self.move_into_impl(fun);
 
@@ -243,7 +243,7 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
     //  Internal.
     fn move_into_impl<U, F>(&mut self, fun: F) -> Result<GhostCursor<'a, 'brand, U>, ()>
     where
-        F: FnOnce(&'a T) -> Option<&'a GhostCell<'brand, U>>,
+        F: FnOnce(&T) -> Option<&GhostCell<'brand, U>>,
     {
         //  Safety:
         //  -   Borrows `self` mutably, therefore ensuring that no borrow of the token exists.
@@ -328,5 +328,28 @@ pub fn cursor_into_parts_first_part_leaves_token_borrowed_mutably() {}
 /// })
 /// ```
 pub fn cursor_into_parts_second_part_leaves_token_borrowed_mutably() {}
+
+/// ```compile_fail,E0521
+/// use core::cell::Cell;
+/// use ghost_cell::{GhostCell, GhostCursor, GhostToken};
+///
+/// GhostToken::new(|mut token| {
+///     let cell = GhostCell::new(1);
+///     let leak = Cell::new(None);
+///     let mut cursor = GhostCursor::new(&mut token, Some(&cell));
+///
+///     let _ = cursor.move_mut(|cell_ref| {
+///         leak.set(Some(cell_ref));   //  Fail, `cell_ref` cannot escape the closure body.
+///         None
+///     });
+///
+///     //  If `cell_ref` escaped, this would be a shared reference whose value can change -- this is unsound.
+///     let cell_ref: &i32 = leak.get().unwrap();
+///     assert_eq!(*cell_ref, 1);
+///     *cursor.borrow_mut().unwrap() = 42;
+///     assert_eq!(*cell_ref, 42);
+/// })
+/// ```
+pub fn cursor_move_mut_noescape() {}
 
 } // mod compile_tests
