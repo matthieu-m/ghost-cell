@@ -62,7 +62,7 @@ impl<'a, 'brand, T, const N: usize> GhostBorrow<'a, 'brand> for &'a [GhostCell<'
 
 macro_rules! generate_public_instance {
     ( $($name:ident),* ; $($type_letter:ident),* ) => {
-        impl<'a, 'brand, $($type_letter,)*> GhostBorrow<'a, 'brand> for
+        impl<'a, 'brand, $($type_letter: ?Sized,)*> GhostBorrow<'a, 'brand> for
                 ( $(&'a GhostCell<'brand, $type_letter>, )* )
         {
             type Result = ( $(&'a $type_letter, )* );

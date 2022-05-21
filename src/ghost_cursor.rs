@@ -44,12 +44,12 @@ use core::ptr::NonNull;
 use super::{GhostCell, GhostToken};
 
 /// A `GhostCursor`, to navigate across a web of `GhostCell`s.
-pub struct GhostCursor<'a, 'brand, T> {
+pub struct GhostCursor<'a, 'brand, T: ?Sized> {
     token: NonNull<GhostToken<'brand>>,
     cell: Option<&'a GhostCell<'brand, T>>,
 }
 
-impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
+impl<'a, 'brand, T: ?Sized> GhostCursor<'a, 'brand, T> {
     /// Creates a new instance of the cursor.
     pub fn new(token: &'a mut GhostToken<'brand>, cell: Option<&'a GhostCell<'brand, T>>) -> Self {
         let token = NonNull::from(token);
@@ -261,11 +261,11 @@ impl<'a, 'brand, T> GhostCursor<'a, 'brand, T> {
 //  Implementation
 //
 
-unsafe fn as_ref<'a, T>(ptr: NonNull<T>) -> &'a T {
+unsafe fn as_ref<'a, T: ?Sized>(ptr: NonNull<T>) -> &'a T {
     &*ptr.as_ptr()
 }
 
-unsafe fn as_mut<'a, T>(ptr: NonNull<T>) -> &'a mut T {
+unsafe fn as_mut<'a, T: ?Sized>(ptr: NonNull<T>) -> &'a mut T {
     &mut *ptr.as_ptr()
 }
 
