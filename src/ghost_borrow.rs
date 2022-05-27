@@ -4,6 +4,7 @@
 //! provides.
 
 use core::mem;
+use core::ptr;
 
 use crate::ghost_cell::*;
 
@@ -54,9 +55,21 @@ impl<'a, 'brand, T, const N: usize> GhostBorrow<'a, 'brand> for &'a [GhostCell<'
 
     fn borrow(self, _: &'a GhostToken<'brand>) -> Self::Result {
         //  Safety:
-        //  -   Exclusive access to the `GhostToken` ensures exclusive access to the cells' content.
+        //  -   Shared access to the `GhostToken` ensures shared access to the cells' content.
         //  -   `GhostCell` is `repr(transparent)`, hence `T` and `GhostCell<T>` have the same memory representation.
         unsafe { mem::transmute::<Self, Self::Result>(self) }
+    }
+}
+
+impl<'a, 'brand, T, const N: usize> GhostBorrow<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
+    type Result = [&'a T; N];
+
+    fn borrow(self, _: &'a GhostToken<'brand>) -> Self::Result {
+        //  Safety:
+        //  -   `[&'a GhostCell<'brand, T>; N]` and `[&'a T; N]` have the same size.
+        //  -   `[&'a GhostCell<'brand, T>; N]` implements `Copy`, so no `mem::forget` is needed.
+        //  -   We can't use `mem::transmute`, because of https://github.com/rust-lang/rust/issues/61956.
+        unsafe { ptr::read(&self as *const _ as *const Self::Result) }
     }
 }
 
