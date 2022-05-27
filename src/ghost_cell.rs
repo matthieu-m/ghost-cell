@@ -85,8 +85,8 @@ impl<'brand, T> GhostCell<'brand, T> {
     ///     assert_eq!(42, *cell.borrow(&token));
     /// });
     /// ```
-    pub fn new(value: T) -> Self {
-        let _marker = InvariantLifetime::default();
+    pub const fn new(value: T) -> Self {
+        let _marker = PhantomData;
         let value = UnsafeCell::new(value);
 
         Self { _marker, value }
