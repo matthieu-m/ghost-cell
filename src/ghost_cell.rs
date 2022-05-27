@@ -108,7 +108,9 @@ impl<'brand, T> GhostCell<'brand, T> {
     /// assert_eq!(42, value);
     /// ```
     pub fn into_inner(self) -> T { self.value.into_inner() }
+}
 
+impl<'brand, T: ?Sized> GhostCell<'brand, T> {
     /// Immutably borrows the `GhostCell` with the same-branded token.
     ///
     /// #   Example
@@ -172,9 +174,7 @@ impl<'brand, T> GhostCell<'brand, T> {
         //      -   `get_mut`, which would borrow the cell mutably.
         unsafe { &mut *self.value.get() }
     }
-}
 
-impl<'brand, T: ?Sized> GhostCell<'brand, T> {
     /// Returns a raw pointer to the contained value.
     pub const fn as_ptr(&self) -> *mut T { self.value.get() }
 
@@ -342,14 +342,14 @@ impl<'brand, T> From<T> for GhostCell<'brand, T> {
 ///
 /// Conversely, a `GhostCell` does not add any state on top of `T`, so if `T` can be sent across threads, so can
 /// `GhostCell<'_, T>`
-unsafe impl<'brand, T: Send> Send for GhostCell<'brand, T> {}
+unsafe impl<'brand, T: ?Sized + Send> Send for GhostCell<'brand, T> {}
 
 /// A `GhostCell<'_, T>` owns a `T`, so it cannot be accessed from different threads if `T` cannot.
 ///
 /// Conversely, a `GhostCell` does not add any state on top of `T`, so if `T` can be accessed from different threads,
 /// so can `GhostCell<'_, T>`. `T` also needs to be sendable across threads,
 /// because a `T` can be extracted from a `&GhostCell<'brand, T>` via [`GhostCell::replace`].
-unsafe impl<'brand, T: Send + Sync> Sync for GhostCell<'brand, T> {}
+unsafe impl<'brand, T: ?Sized + Send + Sync> Sync for GhostCell<'brand, T> {}
 
 //
 //  Implementation
