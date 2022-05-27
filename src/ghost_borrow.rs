@@ -61,7 +61,7 @@ impl<'a, 'brand, T, const N: usize> GhostBorrow<'a, 'brand> for &'a [GhostCell<'
     }
 }
 
-impl<'a, 'brand, T, const N: usize> GhostBorrow<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
+impl<'a, 'brand, T: ?Sized, const N: usize> GhostBorrow<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
     type Result = [&'a T; N];
 
     fn borrow(self, _: &'a GhostToken<'brand>) -> Self::Result {

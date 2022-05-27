@@ -25,7 +25,7 @@ use crate::ghost_cell::*;
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub struct GhostAliasingError();
 
-/// A void struct. Used as the error case when The error case is impossible.
+/// A void struct. Used as the error case when the error case is impossible.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub enum VoidError {}
 
@@ -149,7 +149,7 @@ impl<'a, 'brand, T, const N: usize> GhostBorrowMut<'a, 'brand> for &'a [GhostCel
 }
 
 
-impl<'a, 'brand, T, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
+impl<'a, 'brand, T: ?Sized, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
     type Result = [&'a mut T; N];
     type Error = GhostAliasingError;
 
