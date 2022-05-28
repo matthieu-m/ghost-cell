@@ -149,7 +149,7 @@ impl<'a, 'brand, T, const N: usize> GhostBorrowMut<'a, 'brand> for &'a [GhostCel
 }
 
 
-impl<'a, 'brand, T: ?Sized, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
+impl<'a, 'brand, T, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
     type Result = [&'a mut T; N];
     type Error = GhostAliasingError;
 
@@ -180,7 +180,7 @@ impl<'a, 'brand, T: ?Sized, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a 
 
 macro_rules! generate_public_instance {
     ( $($name:ident),* ; $($type_letter:ident),* ) => {
-        impl<'a, 'brand, $($type_letter: ?Sized,)*> GhostBorrowMut<'a, 'brand> for
+        impl<'a, 'brand, $($type_letter,)*> GhostBorrowMut<'a, 'brand> for
                 ( $(&'a GhostCell<'brand, $type_letter>, )* )
         {
             type Result = ( $(&'a mut $type_letter, )* );
@@ -289,7 +289,7 @@ fn multiple_borrows_tuple() {
 
 #[test]
 #[should_panic]
-fn multiple_borrows_tuple_alisased() {
+fn multiple_borrows_tuple_aliased() {
     GhostToken::new(|mut token| {
         let cell1 = GhostCell::new(42);
         let cell2 = GhostCell::new(47);
