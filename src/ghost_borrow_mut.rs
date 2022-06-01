@@ -25,7 +25,7 @@ use crate::ghost_cell::*;
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub struct GhostAliasingError();
 
-/// A void struct. Used as the error case when The error case is impossible.
+/// A void struct. Used as the error case when the error case is impossible.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub enum VoidError {}
 
@@ -180,7 +180,7 @@ impl<'a, 'brand, T, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a GhostCel
 
 macro_rules! generate_public_instance {
     ( $($name:ident),* ; $($type_letter:ident),* ) => {
-        impl<'a, 'brand, $($type_letter: ?Sized,)*> GhostBorrowMut<'a, 'brand> for
+        impl<'a, 'brand, $($type_letter,)*> GhostBorrowMut<'a, 'brand> for
                 ( $(&'a GhostCell<'brand, $type_letter>, )* )
         {
             type Result = ( $(&'a mut $type_letter, )* );
@@ -289,7 +289,7 @@ fn multiple_borrows_tuple() {
 
 #[test]
 #[should_panic]
-fn multiple_borrows_tuple_alisased() {
+fn multiple_borrows_tuple_aliased() {
     GhostToken::new(|mut token| {
         let cell1 = GhostCell::new(42);
         let cell2 = GhostCell::new(47);
