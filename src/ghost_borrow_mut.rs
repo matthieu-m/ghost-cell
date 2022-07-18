@@ -351,4 +351,65 @@ fn multiple_borrows_array_ref() {
     assert_eq!((33, 34, 35), value);
 }
 
+#[test]
+fn check_distinct() {
+    // small array
+    GhostToken::new(|mut token| {
+        let cells = [
+            GhostCell::new(1),
+            GhostCell::new(2),
+            GhostCell::new(3),
+            GhostCell::new(4),
+            GhostCell::new(5),
+            GhostCell::new(6),
+        ];
+
+        // no aliasing
+        let tuple1 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5]);
+        assert!(tuple1.borrow_mut(&mut token).is_ok());
+
+        // aliasing at start/end
+        let tuple2 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[0]);
+        assert!(tuple2.borrow_mut(&mut token).is_err());
+    });
+
+    // big array
+    GhostToken::new(|mut token| {
+        let cells = [
+            GhostCell::new(1),
+            GhostCell::new(2),
+            GhostCell::new(3),
+            GhostCell::new(4),
+            GhostCell::new(5),
+            GhostCell::new(6),
+            GhostCell::new(7),
+            GhostCell::new(8),
+            GhostCell::new(9),
+            GhostCell::new(10),
+            GhostCell::new(11),
+            GhostCell::new(12),
+        ];
+
+        // no aliasing
+        let tuple1 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[11]);
+        assert!(tuple1.borrow_mut(&mut token).is_ok());
+
+        // aliasing at start/end
+        let tuple2 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[0]);
+        assert!(tuple2.borrow_mut(&mut token).is_err());
+
+        // aliasing at the start
+        let tuple3 = (&cells[0], &cells[0], &cells[1], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[11]);
+        assert!(tuple3.borrow_mut(&mut token).is_err());
+
+        // aliasing at the end
+        let tuple4 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[10]);
+        assert!(tuple4.borrow_mut(&mut token).is_err());
+
+        // aliasing in the middle
+        let tuple5 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[5], &cells[7], &cells[8], &cells[9], &cells[10], &cells[11]);
+        assert!(tuple5.borrow_mut(&mut token).is_err());
+    });
+}
+
 } // mod tests
