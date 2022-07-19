@@ -249,16 +249,24 @@ generate_public_instance!(a, b, c, d, e, f, g, h, i, j, k, l ; T0, T1, T2, T3, T
 //
 
 /// Returns `Err(GhostAliasingError())` if the inputs are distinct, and `Ok(())` otherwise.
-fn check_distinct<const N: usize>(arr: [*const (); N]) -> Result<(), GhostAliasingError> {
-    for i in 0..N {
-        for j in 0..i {
-            if core::ptr::eq(arr[i], arr[j]) {
+fn check_distinct<const N: usize>(mut arr: [*const (); N]) -> Result<(), GhostAliasingError> {
+    if N <= 10 {
+        for i in 0..N {
+            for j in 0..i {
+                if core::ptr::eq(arr[i], arr[j]) {
+                    return Err(GhostAliasingError());
+                }
+            }
+        }
+    } else {
+        arr.sort_unstable();
+        for i in 0..(N - 1) {
+            if core::ptr::eq(arr[i], arr[i + 1]) {
                 return Err(GhostAliasingError());
             }
         }
     }
     Ok(())
-    // TODO: if the array is large enough, sort the values instead.
 }
 
 #[cfg(test)]
@@ -341,6 +349,67 @@ fn multiple_borrows_array_ref() {
         (*array[0].borrow(&token), *array[1].borrow(&token), *array[2].borrow(&token))
     });
     assert_eq!((33, 34, 35), value);
+}
+
+#[test]
+fn check_distinct() {
+    // small array
+    GhostToken::new(|mut token| {
+        let cells = [
+            GhostCell::new(1),
+            GhostCell::new(2),
+            GhostCell::new(3),
+            GhostCell::new(4),
+            GhostCell::new(5),
+            GhostCell::new(6),
+        ];
+
+        // no aliasing
+        let tuple1 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5]);
+        assert!(tuple1.borrow_mut(&mut token).is_ok());
+
+        // aliasing at start/end
+        let tuple2 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[0]);
+        assert!(tuple2.borrow_mut(&mut token).is_err());
+    });
+
+    // big array
+    GhostToken::new(|mut token| {
+        let cells = [
+            GhostCell::new(1),
+            GhostCell::new(2),
+            GhostCell::new(3),
+            GhostCell::new(4),
+            GhostCell::new(5),
+            GhostCell::new(6),
+            GhostCell::new(7),
+            GhostCell::new(8),
+            GhostCell::new(9),
+            GhostCell::new(10),
+            GhostCell::new(11),
+            GhostCell::new(12),
+        ];
+
+        // no aliasing
+        let tuple1 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[11]);
+        assert!(tuple1.borrow_mut(&mut token).is_ok());
+
+        // aliasing at start/end
+        let tuple2 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[0]);
+        assert!(tuple2.borrow_mut(&mut token).is_err());
+
+        // aliasing at the start
+        let tuple3 = (&cells[0], &cells[0], &cells[1], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[11]);
+        assert!(tuple3.borrow_mut(&mut token).is_err());
+
+        // aliasing at the end
+        let tuple4 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[10]);
+        assert!(tuple4.borrow_mut(&mut token).is_err());
+
+        // aliasing in the middle
+        let tuple5 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[5], &cells[7], &cells[8], &cells[9], &cells[10], &cells[11]);
+        assert!(tuple5.borrow_mut(&mut token).is_err());
+    });
 }
 
 } // mod tests
