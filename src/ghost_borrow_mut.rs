@@ -23,7 +23,7 @@ use crate::ghost_cell::*;
 
 /// An error signifying that two `GhostCell`s that need to be distinct were actually the same cell.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
-pub struct GhostAliasingError();
+pub struct GhostAliasingError;
 
 /// A void struct. Used as the error case when the error case is impossible.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
@@ -248,13 +248,13 @@ generate_public_instance!(a, b, c, d, e, f, g, h, i, j, k, l ; T0, T1, T2, T3, T
 //  Implementation
 //
 
-/// Returns `Err(GhostAliasingError())` if the inputs are distinct, and `Ok(())` otherwise.
+/// Returns `Err(GhostAliasingError)` if the inputs are distinct, and `Ok(())` otherwise.
 fn check_distinct<const N: usize>(mut arr: [*const (); N]) -> Result<(), GhostAliasingError> {
     if N <= 10 {
         for i in 0..N {
             for j in 0..i {
                 if core::ptr::eq(arr[i], arr[j]) {
-                    return Err(GhostAliasingError());
+                    return Err(GhostAliasingError);
                 }
             }
         }
@@ -262,7 +262,7 @@ fn check_distinct<const N: usize>(mut arr: [*const (); N]) -> Result<(), GhostAl
         arr.sort_unstable();
         for i in 0..(N - 1) {
             if core::ptr::eq(arr[i], arr[i + 1]) {
-                return Err(GhostAliasingError());
+                return Err(GhostAliasingError);
             }
         }
     }
