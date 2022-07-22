@@ -1,0 +1,10 @@
+error[E0502]: cannot borrow `token` as immutable because it is also borrowed as mutable
+  --> tests/compile_tests/ghost_cell/cell_borrow_mut_borrows_token_mutably.rs:9:35
+   |
+8  |         let r = one.borrow_mut(&mut token);
+   |                                ---------- mutable borrow occurs here
+9  |         assert_eq!(2, *two.borrow(&token));
+   |                                   ^^^^^^ immutable borrow occurs here
+10 |
+11 |         *r = 33;
+   |         ------- mutable borrow later used here

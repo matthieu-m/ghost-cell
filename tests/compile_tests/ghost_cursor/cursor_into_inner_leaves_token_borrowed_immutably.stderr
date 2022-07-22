@@ -1,0 +1,10 @@
+error[E0502]: cannot borrow `token` as immutable because it is also borrowed as mutable
+  --> tests/compile_tests/ghost_cursor/cursor_into_inner_leaves_token_borrowed_immutably.rs:9:39
+   |
+7  |         let cursor = GhostCursor::new(&mut token, Some(&one));
+   |                                       ---------- mutable borrow occurs here
+8  |         if let Some(one) = cursor.into_inner() {
+9  |             assert_eq!(2, *two.borrow(&token));
+   |                                       ^^^^^^ immutable borrow occurs here
+10 |             *one = 3;
+   |             -------- mutable borrow later used here

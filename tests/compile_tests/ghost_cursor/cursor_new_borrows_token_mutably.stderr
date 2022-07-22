@@ -1,0 +1,10 @@
+error[E0502]: cannot borrow `token` as immutable because it is also borrowed as mutable
+ --> tests/compile_tests/ghost_cursor/cursor_new_borrows_token_mutably.rs:8:36
+  |
+6 |         let cursor = GhostCursor::new(&mut token, Some(&cell));
+  |                                       ---------- mutable borrow occurs here
+7 |
+8 |         assert_eq!(1, *cell.borrow(&token));
+  |                                    ^^^^^^ immutable borrow occurs here
+9 |         assert_eq!(Some(&1), cursor.borrow());
+  |                              --------------- mutable borrow later used here

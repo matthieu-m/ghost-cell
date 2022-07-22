@@ -1,0 +1,12 @@
+error[E0502]: cannot borrow `value` as immutable because it is also borrowed as mutable
+  --> tests/compile_tests/ghost_cell/cell_from_mut_borrows_value_mutably.rs:9:9
+   |
+7  |         let cell = GhostCell::from_mut(&mut value);
+   |                                        ---------- mutable borrow occurs here
+8  |
+9  |         assert_eq!(42, value);
+   |         ^^^^^^^^^^^^^^^^^^^^^ immutable borrow occurs here
+10 |         assert_eq!(42, *cell.borrow(&token));
+   |                         ------------------- mutable borrow later used here
+   |
+   = note: this error originates in the macro `assert_eq` (in Nightly builds, run with -Z macro-backtrace for more info)

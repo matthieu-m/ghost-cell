@@ -1,0 +1,10 @@
+error[E0521]: borrowed data escapes outside of closure
+  --> tests/compile_tests/ghost_cursor/cursor_move_mut_noescape.rs:11:13
+   |
+7  |         let leak = Cell::new(None);
+   |             ---- `leak` declared here, outside of the closure body
+...
+10 |         let _ = cursor.move_mut(|cell_ref| {
+   |                                  -------- `cell_ref` is a reference that is only valid in the closure body
+11 |             leak.set(Some(cell_ref));
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^ `cell_ref` escapes the closure body here

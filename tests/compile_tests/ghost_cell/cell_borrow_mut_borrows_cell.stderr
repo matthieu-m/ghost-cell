@@ -1,0 +1,10 @@
+error[E0505]: cannot move out of `cell` because it is borrowed
+  --> tests/compile_tests/ghost_cell/cell_borrow_mut_borrows_cell.rs:8:24
+   |
+7  |         let r = cell.borrow_mut(&mut token);
+   |                 --------------------------- borrow of `cell` occurs here
+8  |         std::mem::drop(cell);
+   |                        ^^^^ move out of `cell` occurs here
+9  |
+10 |         *r
+   |         -- borrow later used here

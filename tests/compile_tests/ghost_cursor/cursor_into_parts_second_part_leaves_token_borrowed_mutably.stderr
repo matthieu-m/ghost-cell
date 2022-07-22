@@ -1,0 +1,21 @@
+error[E0499]: cannot borrow `token` as mutable more than once at a time
+  --> tests/compile_tests/ghost_cursor/cursor_into_parts_second_part_leaves_token_borrowed_mutably.rs:9:29
+   |
+7  |         let cursor = GhostCursor::new(&mut token, Some(&one));
+   |                                       ---------- first mutable borrow occurs here
+8  |         if let Some(one) = cursor.into_parts().1 {
+9  |             *two.borrow_mut(&mut token) = 4;
+   |                             ^^^^^^^^^^ second mutable borrow occurs here
+10 |             assert_eq!(1, *one.borrow(&token));
+   |                            ------------------ first borrow later used here
+
+error[E0502]: cannot borrow `token` as immutable because it is also borrowed as mutable
+  --> tests/compile_tests/ghost_cursor/cursor_into_parts_second_part_leaves_token_borrowed_mutably.rs:10:39
+   |
+7  |         let cursor = GhostCursor::new(&mut token, Some(&one));
+   |                                       ---------- mutable borrow occurs here
+...
+10 |             assert_eq!(1, *one.borrow(&token));
+   |                                ------ ^^^^^^ immutable borrow occurs here
+   |                                |
+   |                                mutable borrow later used by call
