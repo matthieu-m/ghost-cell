@@ -73,10 +73,20 @@ impl<'a, 'brand, T: ?Sized, const N: usize> GhostBorrow<'a, 'brand> for [&'a Gho
     }
 }
 
+macro_rules! last {
+    () => {};
+    ($head:ident $(,)?) => {
+        $head
+    };
+    ($head:ident, $($tail:ident),+ $(,)?) => {
+        last!($($tail),+)
+    };
+}
+
 macro_rules! generate_public_instance {
     ( $($name:ident),* ; $($type_letter:ident),* ) => {
-        impl<'a, 'brand, $($type_letter: ?Sized,)*> GhostBorrow<'a, 'brand> for
-                ( $(&'a GhostCell<'brand, $type_letter>, )* )
+        impl<'a, 'brand, $($type_letter: ?Sized,)*> GhostBorrow<'a, 'brand>
+            for ( $(&'a GhostCell<'brand, $type_letter>, )* )
         {
             type Result = ( $(&'a $type_letter, )* );
 
@@ -87,8 +97,10 @@ macro_rules! generate_public_instance {
             }
         }
 
-        impl<'a, 'brand, $($type_letter,)*> GhostBorrow<'a, 'brand> for
-                &'a ( $(GhostCell<'brand, $type_letter>, )* )
+        impl<'a, 'brand, $($type_letter,)*> GhostBorrow<'a, 'brand>
+            for &'a ( $(GhostCell<'brand, $type_letter>, )* )
+        where
+            last!( $($type_letter),* ): ?Sized
         {
             type Result = &'a ( $($type_letter, )* );
 

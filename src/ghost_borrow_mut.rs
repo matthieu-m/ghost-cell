@@ -177,11 +177,20 @@ impl<'a, 'brand, T, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a GhostCel
     }
 }
 
+macro_rules! last {
+    () => {};
+    ($head:ident $(,)?) => {
+        $head
+    };
+    ($head:ident, $($tail:ident),+ $(,)?) => {
+        last!($($tail),+)
+    };
+}
 
 macro_rules! generate_public_instance {
     ( $($name:ident),* ; $($type_letter:ident),* ) => {
-        impl<'a, 'brand, $($type_letter,)*> GhostBorrowMut<'a, 'brand> for
-                ( $(&'a GhostCell<'brand, $type_letter>, )* )
+        impl<'a, 'brand, $($type_letter,)*> GhostBorrowMut<'a, 'brand>
+            for ( $(&'a GhostCell<'brand, $type_letter>, )* )
         {
             type Result = ( $(&'a mut $type_letter, )* );
             type Error = GhostAliasingError;
@@ -207,8 +216,10 @@ macro_rules! generate_public_instance {
             }
         }
 
-        impl<'a, 'brand, $($type_letter,)*> GhostBorrowMut<'a, 'brand> for
-                &'a ( $(GhostCell<'brand, $type_letter>, )* )
+        impl<'a, 'brand, $($type_letter,)*> GhostBorrowMut<'a, 'brand>
+            for &'a ( $(GhostCell<'brand, $type_letter>, )* )
+        where
+            last!( $($type_letter),* ): ?Sized
         {
             type Result = &'a mut ( $($type_letter, )* );
             type Error = VoidError;
