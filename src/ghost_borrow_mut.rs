@@ -149,17 +149,18 @@ impl<'a, 'brand, T, const N: usize> GhostBorrowMut<'a, 'brand> for &'a [GhostCel
 }
 
 
-impl<'a, 'brand, T, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
+impl<'a, 'brand, T: ?Sized, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
     type Result = [&'a mut T; N];
     type Error = GhostAliasingError;
 
     fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
-        //  We require that the types are `Sized`, so no fat pointer problems.
         //  Safety:
-        //  -   `[&'a GhostCell<'brand, T>; N]` and `[*const (); N]` have the same size.
+        //  -   `[&'a GhostCell<'brand, T>; N]` and `[*const T; N]` have the same size.
         //  -   `[&'a GhostCell<'brand, T>; N]` implements `Copy`, so no `mem::forget` is needed.
         //  -   We can't use `mem::transmute`, because of https://github.com/rust-lang/rust/issues/61956.
-        check_distinct(unsafe { ptr::read(&self as *const _ as *const [*const (); N]) })?;
+        //  Note: We can't cast to a `*const [*const (); N]` to immediately extract addresses due to the size/layout of fat pointers;
+        //        see https://github.com/matthieu-m/ghost-cell/pull/16#discussion_r884114694 for more details.
+        check_distinct(unsafe { ptr::read(&self as *const _ as *const [*const T; N]) })?;
 
         //  Safety:
         //  -   The cells were checked to be distinct.
@@ -189,7 +190,7 @@ macro_rules! last {
 
 macro_rules! generate_public_instance {
     ( $($name:ident),* ; $($type_letter:ident),* ) => {
-        impl<'a, 'brand, $($type_letter,)*> GhostBorrowMut<'a, 'brand>
+        impl<'a, 'brand, $($type_letter: ?Sized,)*> GhostBorrowMut<'a, 'brand>
             for ( $(&'a GhostCell<'brand, $type_letter>, )* )
         {
             type Result = ( $(&'a mut $type_letter, )* );
@@ -198,7 +199,8 @@ macro_rules! generate_public_instance {
             fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
                 let ($($name,)*) = self;
 
-                //  We require that the types are `Sized`, so no fat pointer problems.
+                //  We go ahead and convert to thin pointers here because unlike the `[&'a GhostCell<'brand, T>; N]` impl,
+                //  we're constructing the array ourselves, so there's no layout issues to worry about.
                 check_distinct([ $( $name as *const _ as *const (), )* ])?;
 
                 //  Safety:
@@ -259,12 +261,14 @@ generate_public_instance!(a, b, c, d, e, f, g, h, i, j, k, l ; T0, T1, T2, T3, T
 //  Implementation
 //
 
-/// Returns `Err(GhostAliasingError)` if the inputs are distinct, and `Ok(())` otherwise.
-fn check_distinct<const N: usize>(mut arr: [*const (); N]) -> Result<(), GhostAliasingError> {
+/// Returns `Ok(())` if the inputs are distinct, and `Err(GhostAliasingError)` otherwise.
+/// 
+/// Ignores the metadata of the given pointers if they are fat, only comparing their addresses.
+fn check_distinct<T: ?Sized, const N: usize>(mut arr: [*const T; N]) -> Result<(), GhostAliasingError> {
     if N <= 10 {
         for i in 0..N {
             for j in 0..i {
-                if core::ptr::eq(arr[i], arr[j]) {
+                if core::ptr::eq(arr[i] as *const (), arr[j] as *const ()) {
                     return Err(GhostAliasingError);
                 }
             }
@@ -272,7 +276,7 @@ fn check_distinct<const N: usize>(mut arr: [*const (); N]) -> Result<(), GhostAl
     } else {
         arr.sort_unstable();
         for i in 0..(N - 1) {
-            if core::ptr::eq(arr[i], arr[i + 1]) {
+            if core::ptr::eq(arr[i] as *const (), arr[i + 1] as *const ()) {
                 return Err(GhostAliasingError);
             }
         }
@@ -360,6 +364,152 @@ fn multiple_borrows_array_ref() {
         (*array[0].borrow(&token), *array[1].borrow(&token), *array[2].borrow(&token))
     });
     assert_eq!((33, 34, 35), value);
+}
+
+//  Trait suitable for testing the mutable borrowing of trait objects
+trait Store {
+    type Item;
+
+    fn get(&self) -> Self::Item;
+
+    fn set(&mut self, x: Self::Item);
+}
+
+impl Store for i32 {
+    type Item = Self;
+
+    fn get(&self) -> Self::Item {
+        *self
+    }
+
+    fn set(&mut self, x: Self::Item) {
+        *self = x;
+    }
+}
+
+#[test]
+fn multiple_borrows_tuple_unsized() {
+    let value = GhostToken::new(|mut token| {
+        let mut data1 = 42;
+        let mut data2 = [47];
+        let mut data3 = 7;
+        let mut data4 = [9];
+
+        let cell1 = &*GhostCell::from_mut(&mut data1 as &mut dyn Store<Item = i32>);
+        let cell2 = &*GhostCell::from_mut(&mut data2 as &mut [i32]);
+        let cell3 = &*GhostCell::from_mut(&mut data3 as &mut dyn Store<Item = i32>);
+        let cell4 = &*GhostCell::from_mut(&mut data4 as &mut [i32]);
+
+        let (reference1, reference2, reference3, reference4)
+            = (cell1, cell2, cell3, cell4).borrow_mut(&mut token).unwrap();
+        reference1.set(7);
+        reference3.set(42);
+        mem::swap(&mut reference2[0], &mut reference4[0]);
+
+        (reference1.get(), reference2[0], reference3.get(), reference4[0])
+    });
+    assert_eq!((7, 9, 42, 47), value);
+}
+
+#[test]
+fn multiple_borrows_array_unsized_slice() {
+    let value = GhostToken::new(|mut token| {
+        let mut data1 = [42];
+        let mut data2 = [47];
+        let mut data3 = [7];
+        let mut data4 = [9];
+
+        let cell1 = &*GhostCell::from_mut(&mut data1 as &mut [i32]);
+        let cell2 = &*GhostCell::from_mut(&mut data2 as &mut [i32]);
+        let cell3 = &*GhostCell::from_mut(&mut data3 as &mut [i32]);
+        let cell4 = &*GhostCell::from_mut(&mut data4 as &mut [i32]);
+        let array = [cell1, cell2, cell3, cell4];
+
+        let reference: [&mut [i32]; 4] = array.borrow_mut(&mut token).unwrap();
+        reference[0][0] = 33;
+        reference[1][0] = 34;
+        reference[2][0] = 35;
+        reference[3][0] = 36;
+
+        (array[0].borrow(&token)[0], array[1].borrow(&token)[0], array[2].borrow(&token)[0])
+    });
+    assert_eq!((33, 34, 35), value);
+}
+
+#[test]
+fn multiple_borrows_array_unsized_dyn_trait() {
+    let value = GhostToken::new(|mut token| {
+        let mut data1 = 42;
+        let mut data2 = 47;
+        let mut data3 = 7;
+        let mut data4 = 9;
+
+        let cell1 = &*GhostCell::from_mut(&mut data1 as &mut dyn Store<Item = i32>);
+        let cell2 = &*GhostCell::from_mut(&mut data2 as &mut dyn Store<Item = i32>);
+        let cell3 = &*GhostCell::from_mut(&mut data3 as &mut dyn Store<Item = i32>);
+        let cell4 = &*GhostCell::from_mut(&mut data4 as &mut dyn Store<Item = i32>);
+        let array = [cell1, cell2, cell3, cell4];
+
+        let reference: [&mut dyn Store<Item = i32>; 4] = array.borrow_mut(&mut token).unwrap();
+        reference[0].set(33);
+        reference[1].set(34);
+        reference[2].set(35);
+        reference[3].set(36);
+
+        (array[0].borrow(&token).get(), array[1].borrow(&token).get(), array[2].borrow(&token).get())
+    });
+    assert_eq!((33, 34, 35), value);
+}
+
+#[test]
+#[should_panic]
+fn multiple_borrows_tuple_unsized_aliased() {
+    GhostToken::new(|mut token| {
+        let mut data1 = 42;
+        let mut data2 = [47];
+        let mut data3 = 7;
+
+        let cell1 = &*GhostCell::from_mut(&mut data1 as &mut dyn Store<Item = i32>);
+        let cell2 = &*GhostCell::from_mut(&mut data2 as &mut [i32]);
+        let cell3 = &*GhostCell::from_mut(&mut data3 as &mut dyn ToString);
+
+        let _: (&mut dyn Store<Item = i32>, &mut [i32], &mut dyn ToString, &mut [i32])
+            = (cell1, cell2, cell3, cell2).borrow_mut(&mut token).unwrap();
+    });
+}
+
+#[test]
+#[should_panic]
+fn multiple_borrows_array_unsized_slice_aliased() {
+    GhostToken::new(|mut token| {
+        let mut data1 = [42];
+        let mut data2 = [47];
+        let mut data3 = [7];
+
+        let cell1 = &*GhostCell::from_mut(&mut data1 as &mut [i32]);
+        let cell2 = &*GhostCell::from_mut(&mut data2 as &mut [i32]);
+        let cell3 = &*GhostCell::from_mut(&mut data3 as &mut [i32]);
+        let array = [cell1, cell2, cell3, cell2];
+
+        let _: [&mut [i32]; 4] = array.borrow_mut(&mut token).unwrap();
+    });
+}
+
+#[test]
+#[should_panic]
+fn multiple_borrows_array_unsized_dyn_trait_aliased() {
+    GhostToken::new(|mut token| {
+        let mut data1 = 42;
+        let mut data2 = 47;
+        let mut data3 = 7;
+
+        let cell1 = &*GhostCell::from_mut(&mut data1 as &mut dyn Store<Item = i32>);
+        let cell2 = &*GhostCell::from_mut(&mut data2 as &mut dyn Store<Item = i32>);
+        let cell3 = &*GhostCell::from_mut(&mut data3 as &mut dyn Store<Item = i32>);
+        let array = [cell1, cell2, cell3, cell2];
+
+        let _: [&mut dyn Store<Item = i32>; 4] = array.borrow_mut(&mut token).unwrap();
+    });
 }
 
 #[test]
