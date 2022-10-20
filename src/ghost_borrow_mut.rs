@@ -201,6 +201,7 @@ macro_rules! generate_public_instance {
 
                 //  We go ahead and convert to thin pointers here because unlike the `[&'a GhostCell<'brand, T>; N]` impl,
                 //  we're constructing the array ourselves, so there's no layout issues to worry about.
+                //  However -- this makes the same assumptions about fat pointers as `check_distinct`.
                 check_distinct([ $( $name as *const _ as *const (), )* ])?;
 
                 //  Safety:
@@ -263,7 +264,12 @@ generate_public_instance!(a, b, c, d, e, f, g, h, i, j, k, l ; T0, T1, T2, T3, T
 
 /// Returns `Ok(())` if the inputs are distinct, and `Err(GhostAliasingError)` otherwise.
 /// 
-/// Ignores the metadata of the given pointers if they are fat, only comparing their addresses.
+/// Ignores the metadata of the given pointers, only comparing their addresses.
+/// 
+/// #   Safety
+/// 
+/// At the moment, it is assumed that the address of a fat pointer always points to the first byte of the actual data.
+/// If this does not hold, the check will be incorrect.
 fn check_distinct<T: ?Sized, const N: usize>(mut arr: [*const T; N]) -> Result<(), GhostAliasingError> {
     if N <= 10 {
         for i in 0..N {
