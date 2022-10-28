@@ -134,18 +134,18 @@ impl<'a, 'brand, T, const N: usize> GhostBorrowMut<'a, 'brand> for &'a [GhostCel
     }
 }
 
-impl<'a, 'brand, T: ?Sized, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
+impl<'a, 'brand, T: sealed::GetSpan + ?Sized, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
     type Result = [&'a mut T; N];
     type Error = GhostAliasingError;
 
     fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
-        //  Safety:
-        //  -   `[&'a GhostCell<'brand, T>; N]` and `[*const T; N]` have the same size.
-        //  -   `[&'a GhostCell<'brand, T>; N]` implements `Copy`, so no `mem::forget` is needed.
-        //  -   We can't use `mem::transmute`, because of https://github.com/rust-lang/rust/issues/61956.
-        //  Note: We can't cast to a `*const [*const (); N]` to immediately extract addresses due to the size/layout of fat pointers;
-        //        see https://github.com/matthieu-m/ghost-cell/pull/16#discussion_r884114694 for more details.
-        check_distinct(unsafe { ptr::read(&self as *const _ as *const [*const T; N]) })?;
+        let mut spans = [sealed::Span::Single(ptr::null()); N];
+
+        for i in 0..N {
+            spans[i] = self[i].borrow(token).get_span();
+        }
+
+        check_distinct(&spans)?;
 
         //  Safety:
         //  -   The cells were checked to be distinct.
@@ -182,12 +182,11 @@ macro_rules! generate_public_instance {
             type Error = GhostAliasingError;
 
             fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
+                use sealed::GetSpan;
+
                 let ($($name,)*) = self;
 
-                //  We go ahead and convert to thin pointers here because unlike the `[&'a GhostCell<'brand, T>; N]` impl,
-                //  we're constructing the array ourselves, so there's no layout issues to worry about.
-                //  However -- this makes the same assumptions about fat pointers as `check_distinct`.
-                check_distinct([ $( $name as *const _ as *const (), )* ])?;
+                check_distinct(&[ $( $name.borrow(token).get_span(), )* ])?;
 
                 //  Safety:
                 //  -   The cells were checked to be distinct.
@@ -247,6 +246,63 @@ generate_public_instance!(a, b, c, d, e, f, g, h, i, j, k, l ; T0, T1, T2, T3, T
 //  Implementation
 //
 
+//  This trait is a pure implementation detail, which only needs to be public because it must be part of the signature
+//  of public functions/traits.
+mod sealed {
+
+#[derive(Clone, Copy, Debug)]
+pub enum Span {
+    Single(*const u8),
+    Slice(*const u8, *const u8),
+}
+
+#[doc(hidden)]
+pub trait GetSpan {
+    //  #   Safety
+    //
+    //  At the moment, it is assumed that the address of a fat pointer always points to the first byte of the actual data.
+    //  If this does not hold, the span returned will not help enforce the necessary invariants.
+    fn get_span(&self) -> Span;
+}
+
+impl<T: ?Sized> GetSpan for T {
+    default fn get_span(&self) -> Span { Span::Single(self as *const T as *const u8) }
+}
+
+impl<T> GetSpan for [T] {
+    fn get_span(&self) -> Span {
+        if self.len() <= 1 {
+            Span::Single(self.as_ptr() as *const u8)
+        } else {
+            let start = self.as_ptr() as *const u8;
+            let length = self.len() * core::mem::size_of::<T>();
+
+            //  Safety:
+            //  -   `start` is a valid pointer.
+            //  -   `start + length` points 1 byte past the end of a valid slice.
+            Span::Slice(start, unsafe { start.add(length) })
+        }
+    }
+}
+
+impl<T, const N: usize> GetSpan for [T; N] {
+    fn get_span(&self) -> Span {
+        if N <= 1 {
+            Span::Single(self.as_ptr() as *const u8)
+        } else {
+            let start = self.as_ptr() as *const u8;
+            let length = N * core::mem::size_of::<T>();
+
+            //  Safety:
+            //  -   `start` is a valid pointer.
+            //  -   `start + length` points 1 byte past the end of a valid slice.
+            Span::Slice(start, unsafe { start.add(length) })
+        }
+    }
+}
+
+} // mod sealed
+
 /// Returns `Ok(())` if the inputs are distinct, and `Err(GhostAliasingError)` otherwise.
 ///
 /// Ignores the metadata of the given pointers, only comparing their addresses.
@@ -255,23 +311,113 @@ generate_public_instance!(a, b, c, d, e, f, g, h, i, j, k, l ; T0, T1, T2, T3, T
 ///
 /// At the moment, it is assumed that the address of a fat pointer always points to the first byte of the actual data.
 /// If this does not hold, the check will be incorrect.
-fn check_distinct<T: ?Sized, const N: usize>(mut arr: [*const T; N]) -> Result<(), GhostAliasingError> {
-    if N <= 10 {
-        for i in 0..N {
-            for j in 0..i {
-                if core::ptr::eq(arr[i] as *const (), arr[j] as *const ()) {
+#[inline(always)]
+fn check_distinct<const N: usize>(spans: &[sealed::Span; N]) -> Result<(), GhostAliasingError> {
+    #[inline(always)]
+    fn split<'a>(spans: &[sealed::Span], singles: &'a mut [*const u8], slices: &'a mut [(*const u8, *const u8)])
+        -> (&'a mut [*const u8], &'a mut [(*const u8, *const u8)])
+    {
+        let mut single_index = 0;
+        let mut slice_index = 0;
+
+        for span in spans {
+            use sealed::Span::*;
+
+            match *span {
+                Single(single) => {
+                    singles[single_index] = single;
+                    single_index += 1;
+                }
+                Slice(start, end) => {
+                    slices[slice_index] = (start, end);
+                    slice_index += 1;
+                }
+            }
+        }
+
+        let singles = &mut singles[..single_index];
+        let slices = &mut slices[..slice_index];
+
+        (singles, slices)
+    }
+
+    //  Pre-condition: `singles` is sorted.
+    fn check_singles(singles: &[*const u8]) -> Result<(), GhostAliasingError> {
+        for window in singles.windows(2) {
+            if window[0] == window[1] {
+                return Err(GhostAliasingError);
+            }
+        }
+
+        Ok(())
+    }
+
+    //  Pre-condition: `slices` is sorted.
+    fn check_slices(slices: &[(*const u8, *const u8)]) -> Result<(), GhostAliasingError> {
+        fn overlap((a, b): (*const u8, *const u8), (c, d): (*const u8, *const u8)) -> bool {
+            //  Ranges [A, B) and [C, D) overlap if:
+            //
+            //  -   [A, B) is a super-range of [C, D), ie A <= C && D <= B.
+            //  -   [C, D) is a super-range of [A, B), ie C <= A && B <= D.
+            //  -   C belongs to [A, B), ie C >= A && C < B.
+            //  -   D belongs to [A, B), ie D >= A && D < B.
+            //
+            //  That's a lot of conditions, so checking the absence of overlapping is surprisingly easier. The ranges do
+            //  not overlap if B <= C or A >= D.
+            //
+            //  Hence they do overlap if !(B <= C or A >= D) <=> !(B <= C) and !(A >= D) <=> B > C and A < D.
+
+            b > c && a < d
+        }
+
+        for window in slices.windows(2) {
+            if overlap(window[0], window[1]) {
+                return Err(GhostAliasingError);
+            }
+        }
+
+        Ok(())
+    }
+
+    //  Pre-condition: `singles` and `slices` are sorted.
+    fn check_singles_in_slices(singles: &[*const u8], mut slices: &[(*const u8, *const u8)]) -> Result<(), GhostAliasingError> {
+        for &single in singles {
+            //  Find the first element of `slices` whose end-of-range is strictly after `single`.
+            let Some(start) = slices.iter().position(|slice| single < slice.1) else { return Ok(()) };
+
+            slices = &slices[start..];
+
+            for slice in slices {
+                if single >= slice.1 { break }
+
+                if single >= slice.0 {
                     return Err(GhostAliasingError);
                 }
             }
         }
-    } else {
-        arr.sort_unstable();
-        for i in 0..(N - 1) {
-            if core::ptr::eq(arr[i] as *const (), arr[i + 1] as *const ()) {
-                return Err(GhostAliasingError);
-            }
-        }
+
+        Ok(())
     }
+
+    let mut singles = [ptr::null(); N];
+    let mut slices = [(ptr::null(), ptr::null()); N];
+
+    let (singles, slices) = split(&spans[..], &mut singles[..], &mut slices[..]);
+
+    if !singles.is_empty() {
+        singles.sort_unstable();
+
+        check_singles(singles)?;
+    }
+
+    if !slices.is_empty() {
+        slices.sort_unstable();
+
+        check_slices(slices)?;
+
+        check_singles_in_slices(singles, slices)?;
+    }
+
     Ok(())
 }
 
@@ -355,6 +501,31 @@ fn multiple_borrows_array_ref() {
         (*array[0].borrow(&token), *array[1].borrow(&token), *array[2].borrow(&token))
     });
     assert_eq!((33, 34, 35), value);
+}
+
+#[test]
+#[should_panic]
+fn multiple_borrows_single_slice_overlap() {
+    GhostToken::new(|mut token| {
+        let mut array = [3, 7];
+        let cell_of_slice = &*GhostCell::from_mut(&mut array[..]);
+        let slice_of_cells = cell_of_slice.as_slice_of_cells();
+        let second_cell = &slice_of_cells[1];
+
+        let _ = (second_cell, cell_of_slice).borrow_mut(&mut token).unwrap();
+    });
+}
+
+#[test]
+#[should_panic]
+fn multiple_borrows_single_array_overlap() {
+    GhostToken::new(|mut token| {
+        let cell_of_array: GhostCell<[i32; 2]> = GhostCell::new([3, 7]);
+        let slice_of_cells = (&cell_of_array as &GhostCell<[i32]>).as_slice_of_cells();
+        let second_cell = &slice_of_cells[1];
+
+        let _ = (second_cell, &cell_of_array).borrow_mut(&mut token).unwrap();
+    });
 }
 
 //  Trait suitable for testing the mutable borrowing of trait objects
@@ -523,44 +694,6 @@ fn check_distinct() {
         // aliasing at start/end
         let tuple2 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[0]);
         assert!(tuple2.borrow_mut(&mut token).is_err());
-    });
-
-    // big array
-    GhostToken::new(|mut token| {
-        let cells = [
-            GhostCell::new(1),
-            GhostCell::new(2),
-            GhostCell::new(3),
-            GhostCell::new(4),
-            GhostCell::new(5),
-            GhostCell::new(6),
-            GhostCell::new(7),
-            GhostCell::new(8),
-            GhostCell::new(9),
-            GhostCell::new(10),
-            GhostCell::new(11),
-            GhostCell::new(12),
-        ];
-
-        // no aliasing
-        let tuple1 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[11]);
-        assert!(tuple1.borrow_mut(&mut token).is_ok());
-
-        // aliasing at start/end
-        let tuple2 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[0]);
-        assert!(tuple2.borrow_mut(&mut token).is_err());
-
-        // aliasing at the start
-        let tuple3 = (&cells[0], &cells[0], &cells[1], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[11]);
-        assert!(tuple3.borrow_mut(&mut token).is_err());
-
-        // aliasing at the end
-        let tuple4 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[10]);
-        assert!(tuple4.borrow_mut(&mut token).is_err());
-
-        // aliasing in the middle
-        let tuple5 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[5], &cells[7], &cells[8], &cells[9], &cells[10], &cells[11]);
-        assert!(tuple5.borrow_mut(&mut token).is_err());
     });
 }
 

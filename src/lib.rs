@@ -34,8 +34,10 @@
 
 //  Generic features.
 #![cfg_attr(not(test), no_std)]
+#![cfg_attr(feature = "experimental-multiple-mutable-borrows", feature(specialization))]
 
 //  Lints.
+#![cfg_attr(feature = "experimental-multiple-mutable-borrows", allow(incomplete_features))]
 #![deny(missing_docs)]
 
 pub mod ghost_cell;
