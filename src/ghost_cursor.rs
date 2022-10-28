@@ -77,12 +77,24 @@ impl<'a, 'brand, T: ?Sized> GhostCursor<'a, 'brand, T> {
     /// #   Safety
     ///
     /// The token is still mutably borrowed for as long as the return value lives.
-    pub fn into_parts(self) -> (&'a mut GhostToken<'brand>, Option<&'a GhostCell<'brand, T>>) {
+    pub fn into_parts(self) -> (&'a GhostToken<'brand>, Option<&'a GhostCell<'brand, T>>) {
+        //  Why cannot `into_parts` returns a mutable reference to `GhostToken`?
+        //
+        //  This is a tempting option, as it would match the constructor (`new`) perfectly. It is also unsound,
+        //  unfortunately, as demonstrated in #25.
+        //
+        //  The current reference pointed to by the cursor may be owned (transitively) by another `GhostCell`.
+        //  Returning a mutable reference to the `GhostToken` allows mutating this other `GhostCell` in a way that may
+        //  destroy (and free), the `GhostCell` this returned reference refers to, thereby allowing a use-after-free.
+        //
+        //  Therefore, this function needs to choose between returning a mutable reference to the token or returning
+        //  a reference to the `GhostCell`; it cannot do both at once, not safely.
+
         //  Safety:
         //  -   `self` is not borrowed, therefore the token is not borrowed.
         //  -   The lifetime of the result ensures that the token and cell remain borrowed for as long as the result
         //      exists.
-        (unsafe { as_mut(self.token) }, self.cell)
+        (unsafe { as_ref(self.token) }, self.cell)
     }
 
     /// Returns a reference to the token.
