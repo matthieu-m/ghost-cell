@@ -16,8 +16,7 @@
 //!
 //! The feature is experimental, to enable, use the feature "experimental-multiple-mutable-borrows".
 
-use core::mem;
-use core::ptr;
+use core::{convert::Infallible, mem, ptr};
 
 use crate::ghost_cell::*;
 
@@ -25,25 +24,12 @@ use crate::ghost_cell::*;
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub struct GhostAliasingError;
 
-/// A void struct. Used as the error case when the error case is impossible.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
-pub enum VoidError {}
-
-impl VoidError {
-    /// Returns any type. Can't happen since `VoidError` can't be constructed.
-    pub fn absurd<T>(self) -> T {
-        match self {}
-        // could also be implemented as:
-        // unsafe { core::hint::unreachable_unchecked() }
-    }
-}
-
 // For uniformity, if anyone wants it. Can't do
-// impl<T> From<VoidError> for T
+// impl<T> From<Infallible> for T
 // because of conflicting implementations.
-impl From<VoidError> for GhostAliasingError {
-    fn from(e: VoidError) -> Self {
-        e.absurd()
+impl From<Infallible> for GhostAliasingError {
+    fn from(_: Infallible) -> Self {
+        loop {}
     }
 }
 
@@ -63,7 +49,7 @@ pub trait GhostBorrowMut<'a, 'brand> {
 
     /// The error case.
     ///
-    /// Use a never type such as `!` or `VoidError` if an error is impossible, and `GhostAliasingError` otherwise.
+    /// Use a never type such as `!` or `Infallible` if an error is impossible, and `GhostAliasingError` otherwise.
     type Error: Into<GhostAliasingError>;
 
     /// Borrows any number of `GhostCell`s mutably at the same time.
@@ -110,7 +96,7 @@ pub trait GhostBorrowMut<'a, 'brand> {
 
 impl<'a, 'brand, T> GhostBorrowMut<'a, 'brand> for &'a [GhostCell<'brand, T>] {
     type Result = &'a mut [T];
-    type Error = VoidError;
+    type Error = Infallible;
 
     fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
         //  Safety:
@@ -130,7 +116,7 @@ impl<'a, 'brand, T> GhostBorrowMut<'a, 'brand> for &'a [GhostCell<'brand, T>] {
 
 impl<'a, 'brand, T, const N: usize> GhostBorrowMut<'a, 'brand> for &'a [GhostCell<'brand, T>; N] {
     type Result = &'a mut [T; N];
-    type Error = VoidError;
+    type Error = Infallible;
 
     fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
         //  Safety:
@@ -147,7 +133,6 @@ impl<'a, 'brand, T, const N: usize> GhostBorrowMut<'a, 'brand> for &'a [GhostCel
         mem::transmute::<Self, Self::Result>(self)
     }
 }
-
 
 impl<'a, 'brand, T: ?Sized, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a GhostCell<'brand, T>; N] {
     type Result = [&'a mut T; N];
@@ -225,7 +210,7 @@ macro_rules! generate_public_instance {
             last!( $($type_letter),* ): ?Sized
         {
             type Result = &'a mut ( $($type_letter, )* );
-            type Error = VoidError;
+            type Error = Infallible;
 
             fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
                 //  Safety:
@@ -263,11 +248,11 @@ generate_public_instance!(a, b, c, d, e, f, g, h, i, j, k, l ; T0, T1, T2, T3, T
 //
 
 /// Returns `Ok(())` if the inputs are distinct, and `Err(GhostAliasingError)` otherwise.
-/// 
+///
 /// Ignores the metadata of the given pointers, only comparing their addresses.
-/// 
+///
 /// #   Safety
-/// 
+///
 /// At the moment, it is assumed that the address of a fat pointer always points to the first byte of the actual data.
 /// If this does not hold, the check will be incorrect.
 fn check_distinct<T: ?Sized, const N: usize>(mut arr: [*const T; N]) -> Result<(), GhostAliasingError> {

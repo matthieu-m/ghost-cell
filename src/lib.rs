@@ -50,7 +50,7 @@ pub use self::ghost_borrow::GhostBorrow;
 pub mod ghost_borrow_mut;
 
 #[cfg(feature = "experimental-multiple-mutable-borrows")]
-pub use self::ghost_borrow_mut::{GhostAliasingError, GhostBorrowMut, VoidError};
+pub use self::ghost_borrow_mut::{GhostAliasingError, GhostBorrowMut};
 
 #[cfg(feature = "experimental-ghost-cursor")]
 pub mod ghost_cursor;
