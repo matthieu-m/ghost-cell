@@ -139,13 +139,7 @@ impl<'a, 'brand, T: ?Sized, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a 
     type Error = GhostAliasingError;
 
     fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
-        //  Safety:
-        //  -   `[&'a GhostCell<'brand, T>; N]` and `[*const T; N]` have the same size.
-        //  -   `[&'a GhostCell<'brand, T>; N]` implements `Copy`, so no `mem::forget` is needed.
-        //  -   We can't use `mem::transmute`, because of https://github.com/rust-lang/rust/issues/61956.
-        //  Note: We can't cast to a `*const [*const (); N]` to immediately extract addresses due to the size/layout of fat pointers;
-        //        see https://github.com/matthieu-m/ghost-cell/pull/16#discussion_r884114694 for more details.
-        check_distinct(unsafe { ptr::read(&self as *const _ as *const [*const T; N]) })?;
+        check_distinct(self.map(|val| get_span(val)))?;
 
         //  Safety:
         //  -   The cells were checked to be distinct.
@@ -184,10 +178,7 @@ macro_rules! generate_public_instance {
             fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
                 let ($($name,)*) = self;
 
-                //  We go ahead and convert to thin pointers here because unlike the `[&'a GhostCell<'brand, T>; N]` impl,
-                //  we're constructing the array ourselves, so there's no layout issues to worry about.
-                //  However -- this makes the same assumptions about fat pointers as `check_distinct`.
-                check_distinct([ $( $name as *const _ as *const (), )* ])?;
+                check_distinct([ $( get_span($name), )* ])?;
 
                 //  Safety:
                 //  -   The cells were checked to be distinct.
@@ -247,29 +238,36 @@ generate_public_instance!(a, b, c, d, e, f, g, h, i, j, k, l ; T0, T1, T2, T3, T
 //  Implementation
 //
 
-/// Returns `Ok(())` if the inputs are distinct, and `Err(GhostAliasingError)` otherwise.
-///
-/// Ignores the metadata of the given pointers, only comparing their addresses.
-///
-/// #   Safety
+/// Currently no unsized types used, but this should be just as sound when they'll be introduced.
+/// The return value `(a,b)` always satisfies `a < b` (the output is never an empty slice).
+/// The output should never be used as the pointers themselved, except for comparisons.
 ///
 /// At the moment, it is assumed that the address of a fat pointer always points to the first byte of the actual data.
-/// If this does not hold, the check will be incorrect.
-fn check_distinct<T: ?Sized, const N: usize>(mut arr: [*const T; N]) -> Result<(), GhostAliasingError> {
-    if N <= 10 {
-        for i in 0..N {
-            for j in 0..i {
-                if core::ptr::eq(arr[i] as *const (), arr[j] as *const ()) {
-                    return Err(GhostAliasingError);
-                }
-            }
-        }
-    } else {
-        arr.sort_unstable();
-        for i in 0..(N - 1) {
-            if core::ptr::eq(arr[i] as *const (), arr[i + 1] as *const ()) {
-                return Err(GhostAliasingError);
-            }
+/// If this does not hold, the returned slice will be incorrect.
+fn get_span<T: ?Sized>(val: &T) -> (*const u8, *const u8) {
+    // The runtime-determined size of the value. If `T: Sized`, this is just `T`'s size.
+    let size = core::mem::size_of_val(val);
+    // If this is a zero-sized value, make sure it takes up some space - otherwise we'll be allowing
+    // duplication of zero-sized values.
+    let adjusted_size = if size == 0 { 1 } else { size };
+    let ptr = val as *const _ as *const u8;
+    // Use `wrapping_add` and not `add`, since `add` requires that the addition doesn't overflow for safety.
+    let edge_ptr = ptr.wrapping_add(adjusted_size);
+    // Check we didn't somehow overflow the ptr, by having an object at the precise end of memory.
+    // (If this overflowed and still passed, the object is larger than our memory...)
+    assert!(ptr < edge_ptr);
+    (ptr, edge_ptr)
+}
+
+/// Returns `Ok(())` if the slices are non overlapping, and `Err(GhostAliasingError)` otherwise.
+fn check_distinct<const N: usize>(
+    mut arr: [(*const u8, *const u8); N],
+) -> Result<(), GhostAliasingError> {
+    // Sort by the start of the slices
+    arr.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    for i in 0..(N - 1) {
+        if arr[i].1 > arr[i + 1].0 {
+            return Err(GhostAliasingError);
         }
     }
     Ok(())
