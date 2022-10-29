@@ -248,8 +248,16 @@ generate_public_instance!(a, b, c, d, e, f, g, h, i, j, k, l ; T0, T1, T2, T3, T
 fn get_span<T: ?Sized>(val: &T) -> (*const u8, *const u8) {
     // The runtime-determined size of the value. If `T: Sized`, this is just `T`'s size.
     let size = core::mem::size_of_val(val);
+
     // If this is a zero-sized value, make sure it takes up some space - otherwise we'll be allowing
     // duplication of zero-sized values.
+    //
+    // TODO: we're assuming here that zero-sized values will have consistent
+    // addresses, even though that might not be the case: since other code knows that the address of a ZST doesn't
+    // matter, and all reads and writes are no-ops, they might give inconsistent addresses.
+    //
+    // In that case, we need to ensure that we won't duplicated zero-sized values somehow.
+
     let adjusted_size = if size == 0 { 1 } else { size };
     let ptr = val as *const _ as *const u8;
     // Use `wrapping_add` and not `add`, since `add` requires that the addition doesn't overflow for safety.
