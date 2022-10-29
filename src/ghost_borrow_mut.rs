@@ -28,6 +28,7 @@ pub struct GhostAliasingError;
 // impl<T> From<Infallible> for T
 // because of conflicting implementations.
 impl From<Infallible> for GhostAliasingError {
+    #[allow(clippy::empty_loop)]
     fn from(_: Infallible) -> Self {
         loop {}
     }
@@ -139,7 +140,7 @@ impl<'a, 'brand, T: ?Sized, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a 
     type Error = GhostAliasingError;
 
     fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
-        check_distinct(self.map(|val| get_span(val)))?;
+        check_distinct(self.map(get_span))?;
 
         //  Safety:
         //  -   The cells were checked to be distinct.
