@@ -29,7 +29,7 @@ pub struct GhostAliasingError;
 // because of conflicting implementations.
 impl From<Infallible> for GhostAliasingError {
     fn from(_: Infallible) -> Self {
-        loop {}
+        unreachable!("Infallible cannot be constructed")
     }
 }
 
@@ -139,13 +139,7 @@ impl<'a, 'brand, T: ?Sized, const N: usize> GhostBorrowMut<'a, 'brand> for [&'a 
     type Error = GhostAliasingError;
 
     fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
-        //  Safety:
-        //  -   `[&'a GhostCell<'brand, T>; N]` and `[*const T; N]` have the same size.
-        //  -   `[&'a GhostCell<'brand, T>; N]` implements `Copy`, so no `mem::forget` is needed.
-        //  -   We can't use `mem::transmute`, because of https://github.com/rust-lang/rust/issues/61956.
-        //  Note: We can't cast to a `*const [*const (); N]` to immediately extract addresses due to the size/layout of fat pointers;
-        //        see https://github.com/matthieu-m/ghost-cell/pull/16#discussion_r884114694 for more details.
-        check_distinct(unsafe { ptr::read(&self as *const _ as *const [*const T; N]) })?;
+        check_distinct(self.map(get_span))?;
 
         //  Safety:
         //  -   The cells were checked to be distinct.
@@ -184,10 +178,7 @@ macro_rules! generate_public_instance {
             fn borrow_mut(self, token: &'a mut GhostToken<'brand>) -> Result<Self::Result, Self::Error> {
                 let ($($name,)*) = self;
 
-                //  We go ahead and convert to thin pointers here because unlike the `[&'a GhostCell<'brand, T>; N]` impl,
-                //  we're constructing the array ourselves, so there's no layout issues to worry about.
-                //  However -- this makes the same assumptions about fat pointers as `check_distinct`.
-                check_distinct([ $( $name as *const _ as *const (), )* ])?;
+                check_distinct([ $( get_span($name), )* ])?;
 
                 //  Safety:
                 //  -   The cells were checked to be distinct.
@@ -247,31 +238,50 @@ generate_public_instance!(a, b, c, d, e, f, g, h, i, j, k, l ; T0, T1, T2, T3, T
 //  Implementation
 //
 
-/// Returns `Ok(())` if the inputs are distinct, and `Err(GhostAliasingError)` otherwise.
-///
-/// Ignores the metadata of the given pointers, only comparing their addresses.
-///
-/// #   Safety
-///
-/// At the moment, it is assumed that the address of a fat pointer always points to the first byte of the actual data.
-/// If this does not hold, the check will be incorrect.
-fn check_distinct<T: ?Sized, const N: usize>(mut arr: [*const T; N]) -> Result<(), GhostAliasingError> {
-    if N <= 10 {
-        for i in 0..N {
-            for j in 0..i {
-                if core::ptr::eq(arr[i] as *const (), arr[j] as *const ()) {
-                    return Err(GhostAliasingError);
-                }
-            }
-        }
-    } else {
-        arr.sort_unstable();
-        for i in 0..(N - 1) {
-            if core::ptr::eq(arr[i] as *const (), arr[i + 1] as *const ()) {
-                return Err(GhostAliasingError);
-            }
+//  Returns the _inclusive_ range of memory covered by the value.
+//
+//  #   Why an inclusive range?
+//
+//  -   Dynamically-sized types (DST) require checking for memory range overlap, not just pointer equality.
+//  -   If a value is at the very edge of the memory range, then one-past-the-end would overflow (and wrap around); an
+//      inclusive range has no wrap around issue.
+fn get_span<T: ?Sized>(value: &T) -> (*const u8, *const u8) {
+    //  FIXME: Do zero-sized values have a fixed address when part of an array or tuple?
+
+    let value_size = mem::size_of_val(value);
+
+    let offset = if value_size == 0 { 0 } else { value_size - 1 };
+
+    let start = value as *const T as *const u8;
+
+    //  Safety:
+    //  -   `end` is within the same allocation as `start`, since `value_size` is the size of the object.
+    //  -   `offset` does not overflow `isize`, as the value exists.
+    //  -   `offset` does not rely on wrapping around, since the value doesn't.
+    let end = unsafe { start.add(offset) };
+
+    (start, end)
+}
+
+//  Returns `Ok(())` if the inclusive ranges do not overlap, and `Err(GhostAliasingError)` otherwise.
+//
+//  Assumes that the ranges are _inclusive_.
+fn check_distinct<const N: usize>(mut array: [(*const u8, *const u8); N]) -> Result<(), GhostAliasingError> {
+    //  Sort slices by their start pointer.
+    array.sort_unstable_by_key(|t| t.0);
+
+    //  Overlap can then be detected by whether the end of a slice overtakes the start of the next slice.
+    for window in array.windows(2) {
+        //  Safety:
+        //  -   `window` is guaranteed to have exactly 2 elements.
+        let (left, right) = unsafe { (window.get_unchecked(0), window.get_unchecked(1)) };
+
+        //  Due to ranges being _inclusive_, we need >=, not >.
+        if left.1 >= right.0 {
+            return Err(GhostAliasingError);
         }
     }
+
     Ok(())
 }
 
@@ -355,6 +365,31 @@ fn multiple_borrows_array_ref() {
         (*array[0].borrow(&token), *array[1].borrow(&token), *array[2].borrow(&token))
     });
     assert_eq!((33, 34, 35), value);
+}
+
+#[test]
+#[should_panic]
+fn multiple_borrows_single_slice_overlap() {
+    GhostToken::new(|mut token| {
+        let mut array = [3, 7];
+        let cell_of_slice = &*GhostCell::from_mut(&mut array[..]);
+        let slice_of_cells = cell_of_slice.as_slice_of_cells();
+        let second_cell = &slice_of_cells[1];
+
+        let _ = (second_cell, cell_of_slice).borrow_mut(&mut token).unwrap();
+    });
+}
+
+#[test]
+#[should_panic]
+fn multiple_borrows_single_array_overlap() {
+    GhostToken::new(|mut token| {
+        let cell_of_array = GhostCell::new([3, 7]);
+        let slice_of_cells = (&cell_of_array as &GhostCell<[i32]>).as_slice_of_cells();
+        let second_cell = &slice_of_cells[1];
+
+        let _ = (second_cell, &cell_of_array).borrow_mut(&mut token).unwrap();
+    });
 }
 
 //  Trait suitable for testing the mutable borrowing of trait objects
