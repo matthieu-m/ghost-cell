@@ -6,6 +6,7 @@ use core::{
     cell::UnsafeCell,
     marker::PhantomData,
     mem,
+    ptr,
 };
 
 /// A `GhostToken<'x>` is _the_ key to access the content of any `&GhostCell<'x, _>` sharing the same brand.
@@ -290,6 +291,44 @@ impl<'brand, T> GhostCell<'brand, T> {
         T: Default,
     {
         self.replace(T::default(), token)
+    }
+}
+
+impl<'brand, T> GhostCell<'brand, T> {
+    /// Swaps the values of two cells.
+    /// 
+    /// #   Example
+    /// 
+    /// ```rust
+    /// use ghost_cell::{GhostToken, GhostCell};
+    /// 
+    /// let n = 12;
+    /// 
+    /// let value = GhostToken::new(|mut token| {
+    ///     let cell1 = GhostCell::new(42);
+    ///     let cell2 = GhostCell::new(33);
+    /// 
+    ///     let vec: Vec<_> = (0..n).flat_map(|_| [&cell1, &cell2]).collect();
+    /// 
+    ///     vec[n / 2].swap(&vec[n / 2 + 1], &mut token);
+    /// 
+    ///     *cell1.borrow(&token)
+    /// });
+    /// 
+    /// assert_eq!(33, value);
+    /// ```
+    pub fn swap(&self, other: &Self, _: &mut GhostToken<'brand>) {
+        if ptr::eq(self, other) {
+            return;
+        }
+
+        //  Safety:
+        //  -   Both cells are borrowed immutably, so they cannot be borrowed mutably elsewhere.
+        //  -   The token is borrowed mutably, so it cannot be borrowed anywhere else.
+        //  -   The cells were checked to be distinct.
+        unsafe {
+            ptr::swap(self.value.get(), other.value.get())
+        }
     }
 }
 
