@@ -291,6 +291,41 @@ impl<'brand, T> GhostCell<'brand, T> {
     {
         self.replace(T::default(), token)
     }
+
+    /// Swaps the values of two cells.
+    ///
+    /// If the cells fully overlap, i.e. they have the same address, they are "swapped" (a no-op) and `Ok` is returned.
+    /// `Err` is returned if they overlap in any other way and can't be swapped.
+    ///
+    /// #   Example
+    ///
+    /// ```rust
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// let n = 12;
+    ///
+    /// let value = GhostToken::new(|mut token| {
+    ///     let cell1 = GhostCell::new(42);
+    ///     let cell2 = GhostCell::new(33);
+    ///
+    ///     let vec: Vec<_> = (0..n).flat_map(|_| [&cell1, &cell2]).collect();
+    ///
+    ///     vec[n / 2].swap(&vec[n / 2 + 1], &mut token).expect("overlapping references");
+    ///
+    ///     *cell1.borrow(&token)
+    /// });
+    ///
+    /// assert_eq!(33, value);
+    /// ```
+    #[cfg(feature = "experimental-multiple-mutable-borrows")]
+    pub fn swap(&self, other: &Self, token: &mut GhostToken<'brand>) -> Result<(), crate::ghost_borrow_mut::GhostAliasingError> {
+        // Ignore full overlap.
+        if core::ptr::eq(self, other) {
+            return Ok(());
+        }
+
+        crate::ghost_borrow_mut::GhostBorrowMut::borrow_mut((self, other), token).map(|(a, b)| mem::swap(a, b))
+    }
 }
 
 impl<'brand, T: Default> Default for GhostCell<'brand, T> {
