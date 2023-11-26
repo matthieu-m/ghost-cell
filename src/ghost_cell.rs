@@ -371,9 +371,7 @@ impl<'brand, T> GhostCell<'brand, [T]> {
         //  -   `GhostCell<'_, T>` has the same in-memory representation as `T`.
         unsafe { &*(self.as_ptr() as *mut [GhostCell<'brand, T>]) }
     }
-}
 
-impl<'brand, T> GhostCell<'brand, [T]> {
     /// Returns a cell containing a slice from slice of cells.
     ///
     /// #   Example
@@ -401,6 +399,68 @@ impl<'brand, T> GhostCell<'brand, [T]> {
         //  -   Same lifetime.
         //  -   `GhostCell<'_, T>` has the same in-memory representation as `T`.
         unsafe { &*(slice as *const _ as *const GhostCell<'brand, [T]>) }
+    }
+}
+
+impl<'brand, T, const N: usize> GhostCell<'brand, [T; N]> {
+    /// Returns a reference to an array of cells from a cell containing an array.
+    ///
+    /// #   Example
+    ///
+    /// ```rust
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// let value = GhostToken::new(|mut token| {
+    ///     let mut array = [0, 1, 2, 3, 5];
+    ///     let n = array.len();
+    ///
+    ///     let cell = GhostCell::from_mut(&mut array);
+    ///
+    ///     let inner = cell.as_array_of_cells();
+    ///
+    ///     *inner[n / 2].borrow_mut(&mut token) = 33;
+    ///
+    ///     array[n / 2]
+    /// });
+    ///
+    /// assert_eq!(33, value);
+    /// ```
+    pub fn as_array_of_cells(&self) -> &[GhostCell<'brand, T>; N] {
+        //  Safety:
+        //  -   Same lifetime.
+        //  -   `GhostCell<'_, T>` has the same in-memory representation as `T`.
+        unsafe { &*(self.as_ptr() as *mut [GhostCell<'brand, T>; N]) }
+    }
+
+    /// Returns a cell containing a slice from slice of cells.
+    ///
+    /// #   Example
+    ///
+    /// ```rust
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// let value = GhostToken::new(|mut token| {
+    ///     let mut array = [0, 1, 2, 3, 5];
+    ///     let n = array.len();
+    ///
+    ///     let cell = GhostCell::from_mut(&mut array);
+    ///
+    ///     let inner = cell.as_array_of_cells();
+    ///
+    ///     let inner = GhostCell::from_array_of_cells(&inner);
+    ///
+    ///     inner.borrow_mut(&mut token)[n / 2] = 33;
+    ///
+    ///     array[n / 2]
+    /// });
+    ///
+    /// assert_eq!(33, value);
+    /// ```
+    pub fn from_array_of_cells<'a>(array: &'a [GhostCell<'brand, T>; N]) -> &'a Self {
+        //  Safety:
+        //  -   Same lifetime.
+        //  -   `GhostCell<'_, T>` has the same in-memory representation as `T`.
+        unsafe { &*(array as *const [GhostCell<'brand, T>; N] as *const GhostCell<'brand, [T; N]>) }
     }
 }
 
