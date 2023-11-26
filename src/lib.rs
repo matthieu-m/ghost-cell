@@ -34,7 +34,6 @@
 
 //  Generic features.
 #![cfg_attr(not(test), no_std)]
-
 //  Lints.
 #![deny(missing_docs)]
 

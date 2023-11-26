@@ -2,11 +2,7 @@
 //!
 //! Reference implementation at <https://gitlab.mpi-sws.org/FP/ghostcell/-/tree/master/ghostcell>.
 
-use core::{
-    cell::UnsafeCell,
-    marker::PhantomData,
-    mem,
-};
+use core::{cell::UnsafeCell, marker::PhantomData, mem};
 
 /// A `GhostToken<'x>` is _the_ key to access the content of any `&GhostCell<'x, _>` sharing the same brand.
 ///
@@ -16,7 +12,9 @@ use core::{
 /// to.
 ///
 /// The pool of `GhostCell` associated to a token need not be homogeneous, each may own a value of a different type.
-pub struct GhostToken<'brand> { _marker: InvariantLifetime<'brand> }
+pub struct GhostToken<'brand> {
+    _marker: InvariantLifetime<'brand>,
+}
 
 impl<'brand> GhostToken<'brand> {
     /// Creates a fresh token to which `GhostCell`s can be tied to later.
@@ -48,7 +46,9 @@ impl<'brand> GhostToken<'brand> {
     where
         for<'new_brand> F: FnOnce(GhostToken<'new_brand>) -> R,
     {
-        let token = Self { _marker: InvariantLifetime::default() };
+        let token = Self {
+            _marker: InvariantLifetime::default(),
+        };
         fun(token)
     }
 }
@@ -107,7 +107,9 @@ impl<'brand, T> GhostCell<'brand, T> {
     ///
     /// assert_eq!(42, value);
     /// ```
-    pub fn into_inner(self) -> T { self.value.into_inner() }
+    pub fn into_inner(self) -> T {
+        self.value.into_inner()
+    }
 }
 
 impl<'brand, T: ?Sized> GhostCell<'brand, T> {
@@ -176,7 +178,9 @@ impl<'brand, T: ?Sized> GhostCell<'brand, T> {
     }
 
     /// Returns a raw pointer to the contained value.
-    pub const fn as_ptr(&self) -> *mut T { self.value.get() }
+    pub const fn as_ptr(&self) -> *mut T {
+        self.value.get()
+    }
 
     /// Turns a mutably borrowed `GhostCell` into mutably borrowed data.
     ///
@@ -318,7 +322,11 @@ impl<'brand, T> GhostCell<'brand, T> {
     /// assert_eq!(33, value);
     /// ```
     #[cfg(feature = "experimental-multiple-mutable-borrows")]
-    pub fn swap(&self, other: &Self, token: &mut GhostToken<'brand>) -> Result<(), crate::ghost_borrow_mut::GhostAliasingError> {
+    pub fn swap(
+        &self,
+        other: &Self,
+        token: &mut GhostToken<'brand>,
+    ) -> Result<(), crate::ghost_borrow_mut::GhostAliasingError> {
         // Ignore full overlap.
         if core::ptr::eq(self, other) {
             return Ok(());
@@ -366,11 +374,15 @@ impl<'brand, T> GhostCell<'brand, [T]> {
 }
 
 impl<'brand, T: ?Sized> AsMut<T> for GhostCell<'brand, T> {
-    fn as_mut(&mut self) -> &mut T { self.get_mut() }
+    fn as_mut(&mut self) -> &mut T {
+        self.get_mut()
+    }
 }
 
 impl<'brand, T> From<T> for GhostCell<'brand, T> {
-    fn from(t: T) -> Self { Self::new(t) }
+    fn from(t: T) -> Self {
+        Self::new(t)
+    }
 }
 
 /// A `GhostCell<'_, T>` owns a `T`, so it cannot be sent across threads if `T` cannot.
@@ -395,109 +407,108 @@ type InvariantLifetime<'brand> = PhantomData<fn(&'brand ()) -> &'brand ()>;
 #[doc(hidden)]
 pub mod compile_tests {
 
-/// ```compile_fail
-/// use ghost_cell::{GhostToken, GhostCell};
-///
-/// GhostToken::new(|token| token);
-/// ```
-pub fn token_noescape() {}
+    /// ```compile_fail
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// GhostToken::new(|token| token);
+    /// ```
+    pub fn token_noescape() {}
 
-/// ```compile_fail
-/// use ghost_cell::{GhostToken, GhostCell};
-///
-/// GhostToken::new(|mut token| {
-///     let cell = GhostCell::new(42);
-///
-///     *cell.borrow_mut(&mut token) = 33;
-///
-///     cell
-/// });
-/// ```
-pub fn cell_noescape() {}
+    /// ```compile_fail
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// GhostToken::new(|mut token| {
+    ///     let cell = GhostCell::new(42);
+    ///
+    ///     *cell.borrow_mut(&mut token) = 33;
+    ///
+    ///     cell
+    /// });
+    /// ```
+    pub fn cell_noescape() {}
 
-/// ```compile_fail,E0505
-/// use ghost_cell::{GhostToken, GhostCell};
-///
-/// GhostToken::new(|token| {
-///     let cell = GhostCell::new(42);
-///
-///     let r = cell.borrow(&token);
-///     std::mem::drop(token);
-///
-///     *r
-/// });
-/// ```
-pub fn cell_borrow_borrows_token() {}
+    /// ```compile_fail,E0505
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// GhostToken::new(|token| {
+    ///     let cell = GhostCell::new(42);
+    ///
+    ///     let r = cell.borrow(&token);
+    ///     std::mem::drop(token);
+    ///
+    ///     *r
+    /// });
+    /// ```
+    pub fn cell_borrow_borrows_token() {}
 
-/// ```compile_fail,E0502
-/// use ghost_cell::{GhostToken, GhostCell};
-///
-/// GhostToken::new(|mut token| {
-///     let one = GhostCell::new(1);
-///     let two = GhostCell::new(2);
-///
-///     let r = one.borrow_mut(&mut token);
-///     assert_eq!(2, *two.borrow(&token));
-///
-///     *r = 33;
-/// });
-/// ```
-pub fn cell_borrow_mut_borrows_token_mutably() {}
+    /// ```compile_fail,E0502
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// GhostToken::new(|mut token| {
+    ///     let one = GhostCell::new(1);
+    ///     let two = GhostCell::new(2);
+    ///
+    ///     let r = one.borrow_mut(&mut token);
+    ///     assert_eq!(2, *two.borrow(&token));
+    ///
+    ///     *r = 33;
+    /// });
+    /// ```
+    pub fn cell_borrow_mut_borrows_token_mutably() {}
 
-/// ```compile_fail,E0505
-/// use ghost_cell::{GhostToken, GhostCell};
-///
-/// GhostToken::new(|token| {
-///     let cell = GhostCell::new(42);
-///
-///     let r = cell.borrow(&token);
-///     std::mem::drop(cell);
-///
-///     *r
-/// });
-/// ```
-pub fn cell_borrow_borrows_cell() {}
+    /// ```compile_fail,E0505
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// GhostToken::new(|token| {
+    ///     let cell = GhostCell::new(42);
+    ///
+    ///     let r = cell.borrow(&token);
+    ///     std::mem::drop(cell);
+    ///
+    ///     *r
+    /// });
+    /// ```
+    pub fn cell_borrow_borrows_cell() {}
 
-/// ```compile_fail,E0505
-/// use ghost_cell::{GhostToken, GhostCell};
-///
-/// GhostToken::new(|mut token| {
-///     let cell = GhostCell::new(42);
-///
-///     let r = cell.borrow_mut(&mut token);
-///     std::mem::drop(cell);
-///
-///     *r
-/// });
-/// ```
-pub fn cell_borrow_mut_borrows_cell() {}
+    /// ```compile_fail,E0505
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// GhostToken::new(|mut token| {
+    ///     let cell = GhostCell::new(42);
+    ///
+    ///     let r = cell.borrow_mut(&mut token);
+    ///     std::mem::drop(cell);
+    ///
+    ///     *r
+    /// });
+    /// ```
+    pub fn cell_borrow_mut_borrows_cell() {}
 
-/// ```compile_fail,E0502
-/// use ghost_cell::{GhostToken, GhostCell};
-///
-/// GhostToken::new(|token| {
-///     let mut cell = GhostCell::new(42);
-///
-///     let r = cell.get_mut();
-///     assert_eq!(42, *cell.borrow(&token));
-///
-///     *r = 33;
-/// });
-/// ```
-pub fn cell_get_mut_borrows_cell_mutably() {}
+    /// ```compile_fail,E0502
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// GhostToken::new(|token| {
+    ///     let mut cell = GhostCell::new(42);
+    ///
+    ///     let r = cell.get_mut();
+    ///     assert_eq!(42, *cell.borrow(&token));
+    ///
+    ///     *r = 33;
+    /// });
+    /// ```
+    pub fn cell_get_mut_borrows_cell_mutably() {}
 
-/// ```compile_fail,E0502
-/// use ghost_cell::{GhostToken, GhostCell};
-///
-/// GhostToken::new(|token| {
-///     let mut value = 42;
-///
-///     let cell = GhostCell::from_mut(&mut value);
-///
-///     assert_eq!(42, value);
-///     assert_eq!(42, *cell.borrow(&token));
-/// });
-/// ```
-pub fn cell_from_mut_borrows_value_mutably() {}
-
+    /// ```compile_fail,E0502
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// GhostToken::new(|token| {
+    ///     let mut value = 42;
+    ///
+    ///     let cell = GhostCell::from_mut(&mut value);
+    ///
+    ///     assert_eq!(42, value);
+    ///     assert_eq!(42, *cell.borrow(&token));
+    /// });
+    /// ```
+    pub fn cell_from_mut_borrows_value_mutably() {}
 } // mod compile_tests

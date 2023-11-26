@@ -288,315 +288,343 @@ fn check_distinct<const N: usize>(mut array: [(*const u8, *const u8); N]) -> Res
 #[cfg(test)]
 mod tests {
 
-use super::*;
+    use super::*;
 
-#[test]
-fn multiple_borrows_tuple() {
-    let value = GhostToken::new(|mut token| {
-        let cell1 = GhostCell::new(42);
-        let cell2 = GhostCell::new(47);
-        let cell3 = GhostCell::new(7);
-        let cell4 = GhostCell::new(9);
+    #[test]
+    fn multiple_borrows_tuple() {
+        let value = GhostToken::new(|mut token| {
+            let cell1 = GhostCell::new(42);
+            let cell2 = GhostCell::new(47);
+            let cell3 = GhostCell::new(7);
+            let cell4 = GhostCell::new(9);
 
-        let (reference1, reference2, reference3, reference4): (&mut i32, &mut i32, &mut i32, &mut i32)
-            = (&cell1, &cell2, &cell3, &cell4).borrow_mut(&mut token).unwrap();
-        *reference1 = 33;
-        *reference2 = 34;
-        *reference3 = 35;
-        *reference4 = 36;
+            let (reference1, reference2, reference3, reference4): (&mut i32, &mut i32, &mut i32, &mut i32) =
+                (&cell1, &cell2, &cell3, &cell4).borrow_mut(&mut token).unwrap();
+            *reference1 = 33;
+            *reference2 = 34;
+            *reference3 = 35;
+            *reference4 = 36;
 
-        // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
-        (*cell1.borrow(&token), *cell2.borrow(&token), *cell3.borrow(&token))
-    });
-    assert_eq!((33, 34, 35), value);
-}
-
-#[test]
-#[should_panic]
-fn multiple_borrows_tuple_aliased() {
-    GhostToken::new(|mut token| {
-        let cell1 = GhostCell::new(42);
-        let cell2 = GhostCell::new(47);
-        let cell3 = GhostCell::new(7);
-        let _: (&mut i32, &mut i32, &mut i32, &mut i32)
-            = (&cell1, &cell2, &cell3, &cell2).borrow_mut(&mut token).unwrap();
-    });
-}
-
-#[test]
-fn multiple_borrows_tuple_ref() {
-    let value = GhostToken::new(|mut token| {
-        let cell1 = GhostCell::new(42);
-        let cell2 = GhostCell::new(47);
-        let cell3 = GhostCell::new(7);
-        let cell4 = GhostCell::new(9);
-        let tuple = (cell1, cell2, cell3, cell4);
-
-        let reference: &mut (i32, i32, i32, i32)
-            = tuple.borrow_mut(&mut token).unwrap();
-        reference.0 = 33;
-        reference.1 = 34;
-        reference.2 = 35;
-        reference.3 = 36;
-
-        // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
-        (*tuple.0.borrow(&token), *tuple.1.borrow(&token), *tuple.2.borrow(&token))
-    });
-    assert_eq!((33, 34, 35), value);
-}
-
-#[test]
-fn multiple_borrows_array_ref() {
-    let value = GhostToken::new(|mut token| {
-        let cell1 = GhostCell::new(42);
-        let cell2 = GhostCell::new(47);
-        let cell3 = GhostCell::new(7);
-        let cell4 = GhostCell::new(9);
-        let array = [cell1, cell2, cell3, cell4];
-
-        let reference: &mut [i32; 4]
-            = array.borrow_mut(&mut token).unwrap();
-        reference[0] = 33;
-        reference[1] = 34;
-        reference[2] = 35;
-        reference[3] = 36;
-
-        // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
-        (*array[0].borrow(&token), *array[1].borrow(&token), *array[2].borrow(&token))
-    });
-    assert_eq!((33, 34, 35), value);
-}
-
-#[test]
-#[should_panic]
-fn multiple_borrows_single_slice_overlap() {
-    GhostToken::new(|mut token| {
-        let mut array = [3, 7];
-        let cell_of_slice = &*GhostCell::from_mut(&mut array[..]);
-        let slice_of_cells = cell_of_slice.as_slice_of_cells();
-        let second_cell = &slice_of_cells[1];
-
-        let _ = (second_cell, cell_of_slice).borrow_mut(&mut token).unwrap();
-    });
-}
-
-#[test]
-#[should_panic]
-fn multiple_borrows_single_array_overlap() {
-    GhostToken::new(|mut token| {
-        let cell_of_array = GhostCell::new([3, 7]);
-        let slice_of_cells = (&cell_of_array as &GhostCell<[i32]>).as_slice_of_cells();
-        let second_cell = &slice_of_cells[1];
-
-        let _ = (second_cell, &cell_of_array).borrow_mut(&mut token).unwrap();
-    });
-}
-
-//  Trait suitable for testing the mutable borrowing of trait objects
-trait Store {
-    type Item;
-
-    fn get(&self) -> Self::Item;
-
-    fn set(&mut self, x: Self::Item);
-}
-
-impl Store for i32 {
-    type Item = Self;
-
-    fn get(&self) -> Self::Item {
-        *self
+            // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
+            (*cell1.borrow(&token), *cell2.borrow(&token), *cell3.borrow(&token))
+        });
+        assert_eq!((33, 34, 35), value);
     }
 
-    fn set(&mut self, x: Self::Item) {
-        *self = x;
+    #[test]
+    #[should_panic]
+    fn multiple_borrows_tuple_aliased() {
+        GhostToken::new(|mut token| {
+            let cell1 = GhostCell::new(42);
+            let cell2 = GhostCell::new(47);
+            let cell3 = GhostCell::new(7);
+            let _: (&mut i32, &mut i32, &mut i32, &mut i32) =
+                (&cell1, &cell2, &cell3, &cell2).borrow_mut(&mut token).unwrap();
+        });
     }
-}
 
-#[test]
-fn multiple_borrows_tuple_unsized() {
-    let value = GhostToken::new(|mut token| {
-        let mut data1 = 42;
-        let mut data2 = [47];
-        let mut data3 = 7;
-        let mut data4 = [9];
+    #[test]
+    fn multiple_borrows_tuple_ref() {
+        let value = GhostToken::new(|mut token| {
+            let cell1 = GhostCell::new(42);
+            let cell2 = GhostCell::new(47);
+            let cell3 = GhostCell::new(7);
+            let cell4 = GhostCell::new(9);
+            let tuple = (cell1, cell2, cell3, cell4);
 
-        let cell1 = &*GhostCell::from_mut(&mut data1 as &mut dyn Store<Item = i32>);
-        let cell2 = &*GhostCell::from_mut(&mut data2 as &mut [i32]);
-        let cell3 = &*GhostCell::from_mut(&mut data3 as &mut dyn Store<Item = i32>);
-        let cell4 = &*GhostCell::from_mut(&mut data4 as &mut [i32]);
+            let reference: &mut (i32, i32, i32, i32) = tuple.borrow_mut(&mut token).unwrap();
+            reference.0 = 33;
+            reference.1 = 34;
+            reference.2 = 35;
+            reference.3 = 36;
 
-        let (reference1, reference2, reference3, reference4)
-            = (cell1, cell2, cell3, cell4).borrow_mut(&mut token).unwrap();
-        reference1.set(7);
-        reference3.set(42);
-        mem::swap(&mut reference2[0], &mut reference4[0]);
+            // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
+            (
+                *tuple.0.borrow(&token),
+                *tuple.1.borrow(&token),
+                *tuple.2.borrow(&token),
+            )
+        });
+        assert_eq!((33, 34, 35), value);
+    }
 
-        (reference1.get(), reference2[0], reference3.get(), reference4[0])
-    });
-    assert_eq!((7, 9, 42, 47), value);
-}
+    #[test]
+    fn multiple_borrows_array_ref() {
+        let value = GhostToken::new(|mut token| {
+            let cell1 = GhostCell::new(42);
+            let cell2 = GhostCell::new(47);
+            let cell3 = GhostCell::new(7);
+            let cell4 = GhostCell::new(9);
+            let array = [cell1, cell2, cell3, cell4];
 
-#[test]
-fn multiple_borrows_array_unsized_slice() {
-    let value = GhostToken::new(|mut token| {
-        let mut data1 = [42];
-        let mut data2 = [47];
-        let mut data3 = [7];
-        let mut data4 = [9];
+            let reference: &mut [i32; 4] = array.borrow_mut(&mut token).unwrap();
+            reference[0] = 33;
+            reference[1] = 34;
+            reference[2] = 35;
+            reference[3] = 36;
 
-        let cell1 = &*GhostCell::from_mut(&mut data1 as &mut [i32]);
-        let cell2 = &*GhostCell::from_mut(&mut data2 as &mut [i32]);
-        let cell3 = &*GhostCell::from_mut(&mut data3 as &mut [i32]);
-        let cell4 = &*GhostCell::from_mut(&mut data4 as &mut [i32]);
-        let array = [cell1, cell2, cell3, cell4];
+            // here we stop mutating, so the token isn't mutably borrowed anymore, and we can read again
+            (
+                *array[0].borrow(&token),
+                *array[1].borrow(&token),
+                *array[2].borrow(&token),
+            )
+        });
+        assert_eq!((33, 34, 35), value);
+    }
 
-        let reference: [&mut [i32]; 4] = array.borrow_mut(&mut token).unwrap();
-        reference[0][0] = 33;
-        reference[1][0] = 34;
-        reference[2][0] = 35;
-        reference[3][0] = 36;
+    #[test]
+    #[should_panic]
+    fn multiple_borrows_single_slice_overlap() {
+        GhostToken::new(|mut token| {
+            let mut array = [3, 7];
+            let cell_of_slice = &*GhostCell::from_mut(&mut array[..]);
+            let slice_of_cells = cell_of_slice.as_slice_of_cells();
+            let second_cell = &slice_of_cells[1];
 
-        (array[0].borrow(&token)[0], array[1].borrow(&token)[0], array[2].borrow(&token)[0])
-    });
-    assert_eq!((33, 34, 35), value);
-}
+            let _ = (second_cell, cell_of_slice).borrow_mut(&mut token).unwrap();
+        });
+    }
 
-#[test]
-fn multiple_borrows_array_unsized_dyn_trait() {
-    let value = GhostToken::new(|mut token| {
-        let mut data1 = 42;
-        let mut data2 = 47;
-        let mut data3 = 7;
-        let mut data4 = 9;
+    #[test]
+    #[should_panic]
+    fn multiple_borrows_single_array_overlap() {
+        GhostToken::new(|mut token| {
+            let cell_of_array = GhostCell::new([3, 7]);
+            let slice_of_cells = (&cell_of_array as &GhostCell<[i32]>).as_slice_of_cells();
+            let second_cell = &slice_of_cells[1];
 
-        let cell1 = &*GhostCell::from_mut(&mut data1 as &mut dyn Store<Item = i32>);
-        let cell2 = &*GhostCell::from_mut(&mut data2 as &mut dyn Store<Item = i32>);
-        let cell3 = &*GhostCell::from_mut(&mut data3 as &mut dyn Store<Item = i32>);
-        let cell4 = &*GhostCell::from_mut(&mut data4 as &mut dyn Store<Item = i32>);
-        let array = [cell1, cell2, cell3, cell4];
+            let _ = (second_cell, &cell_of_array).borrow_mut(&mut token).unwrap();
+        });
+    }
 
-        let reference: [&mut dyn Store<Item = i32>; 4] = array.borrow_mut(&mut token).unwrap();
-        reference[0].set(33);
-        reference[1].set(34);
-        reference[2].set(35);
-        reference[3].set(36);
+    //  Trait suitable for testing the mutable borrowing of trait objects
+    trait Store {
+        type Item;
 
-        (array[0].borrow(&token).get(), array[1].borrow(&token).get(), array[2].borrow(&token).get())
-    });
-    assert_eq!((33, 34, 35), value);
-}
+        fn get(&self) -> Self::Item;
 
-#[test]
-#[should_panic]
-fn multiple_borrows_tuple_unsized_aliased() {
-    GhostToken::new(|mut token| {
-        let mut data1 = 42;
-        let mut data2 = [47];
-        let mut data3 = 7;
+        fn set(&mut self, x: Self::Item);
+    }
 
-        let cell1 = &*GhostCell::from_mut(&mut data1 as &mut dyn Store<Item = i32>);
-        let cell2 = &*GhostCell::from_mut(&mut data2 as &mut [i32]);
-        let cell3 = &*GhostCell::from_mut(&mut data3 as &mut dyn ToString);
+    impl Store for i32 {
+        type Item = Self;
 
-        let _: (&mut dyn Store<Item = i32>, &mut [i32], &mut dyn ToString, &mut [i32])
-            = (cell1, cell2, cell3, cell2).borrow_mut(&mut token).unwrap();
-    });
-}
+        fn get(&self) -> Self::Item {
+            *self
+        }
 
-#[test]
-#[should_panic]
-fn multiple_borrows_array_unsized_slice_aliased() {
-    GhostToken::new(|mut token| {
-        let mut data1 = [42];
-        let mut data2 = [47];
-        let mut data3 = [7];
+        fn set(&mut self, x: Self::Item) {
+            *self = x;
+        }
+    }
 
-        let cell1 = &*GhostCell::from_mut(&mut data1 as &mut [i32]);
-        let cell2 = &*GhostCell::from_mut(&mut data2 as &mut [i32]);
-        let cell3 = &*GhostCell::from_mut(&mut data3 as &mut [i32]);
-        let array = [cell1, cell2, cell3, cell2];
+    #[test]
+    fn multiple_borrows_tuple_unsized() {
+        let value = GhostToken::new(|mut token| {
+            let mut data1 = 42;
+            let mut data2 = [47];
+            let mut data3 = 7;
+            let mut data4 = [9];
 
-        let _: [&mut [i32]; 4] = array.borrow_mut(&mut token).unwrap();
-    });
-}
+            let cell1 = &*GhostCell::from_mut(&mut data1 as &mut dyn Store<Item = i32>);
+            let cell2 = &*GhostCell::from_mut(&mut data2 as &mut [i32]);
+            let cell3 = &*GhostCell::from_mut(&mut data3 as &mut dyn Store<Item = i32>);
+            let cell4 = &*GhostCell::from_mut(&mut data4 as &mut [i32]);
 
-#[test]
-#[should_panic]
-fn multiple_borrows_array_unsized_dyn_trait_aliased() {
-    GhostToken::new(|mut token| {
-        let mut data1 = 42;
-        let mut data2 = 47;
-        let mut data3 = 7;
+            let (reference1, reference2, reference3, reference4) =
+                (cell1, cell2, cell3, cell4).borrow_mut(&mut token).unwrap();
+            reference1.set(7);
+            reference3.set(42);
+            mem::swap(&mut reference2[0], &mut reference4[0]);
 
-        let cell1 = &*GhostCell::from_mut(&mut data1 as &mut dyn Store<Item = i32>);
-        let cell2 = &*GhostCell::from_mut(&mut data2 as &mut dyn Store<Item = i32>);
-        let cell3 = &*GhostCell::from_mut(&mut data3 as &mut dyn Store<Item = i32>);
-        let array = [cell1, cell2, cell3, cell2];
+            (reference1.get(), reference2[0], reference3.get(), reference4[0])
+        });
+        assert_eq!((7, 9, 42, 47), value);
+    }
 
-        let _: [&mut dyn Store<Item = i32>; 4] = array.borrow_mut(&mut token).unwrap();
-    });
-}
+    #[test]
+    fn multiple_borrows_array_unsized_slice() {
+        let value = GhostToken::new(|mut token| {
+            let mut data1 = [42];
+            let mut data2 = [47];
+            let mut data3 = [7];
+            let mut data4 = [9];
 
-#[test]
-fn check_distinct() {
-    // small array
-    GhostToken::new(|mut token| {
-        let cells = [
-            GhostCell::new(1),
-            GhostCell::new(2),
-            GhostCell::new(3),
-            GhostCell::new(4),
-            GhostCell::new(5),
-            GhostCell::new(6),
-        ];
+            let cell1 = &*GhostCell::from_mut(&mut data1 as &mut [i32]);
+            let cell2 = &*GhostCell::from_mut(&mut data2 as &mut [i32]);
+            let cell3 = &*GhostCell::from_mut(&mut data3 as &mut [i32]);
+            let cell4 = &*GhostCell::from_mut(&mut data4 as &mut [i32]);
+            let array = [cell1, cell2, cell3, cell4];
 
-        // no aliasing
-        let tuple1 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5]);
-        assert!(tuple1.borrow_mut(&mut token).is_ok());
+            let reference: [&mut [i32]; 4] = array.borrow_mut(&mut token).unwrap();
+            reference[0][0] = 33;
+            reference[1][0] = 34;
+            reference[2][0] = 35;
+            reference[3][0] = 36;
 
-        // aliasing at start/end
-        let tuple2 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[0]);
-        assert!(tuple2.borrow_mut(&mut token).is_err());
-    });
+            (
+                array[0].borrow(&token)[0],
+                array[1].borrow(&token)[0],
+                array[2].borrow(&token)[0],
+            )
+        });
+        assert_eq!((33, 34, 35), value);
+    }
 
-    // big array
-    GhostToken::new(|mut token| {
-        let cells = [
-            GhostCell::new(1),
-            GhostCell::new(2),
-            GhostCell::new(3),
-            GhostCell::new(4),
-            GhostCell::new(5),
-            GhostCell::new(6),
-            GhostCell::new(7),
-            GhostCell::new(8),
-            GhostCell::new(9),
-            GhostCell::new(10),
-            GhostCell::new(11),
-            GhostCell::new(12),
-        ];
+    #[test]
+    fn multiple_borrows_array_unsized_dyn_trait() {
+        let value = GhostToken::new(|mut token| {
+            let mut data1 = 42;
+            let mut data2 = 47;
+            let mut data3 = 7;
+            let mut data4 = 9;
 
-        // no aliasing
-        let tuple1 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[11]);
-        assert!(tuple1.borrow_mut(&mut token).is_ok());
+            let cell1 = &*GhostCell::from_mut(&mut data1 as &mut dyn Store<Item = i32>);
+            let cell2 = &*GhostCell::from_mut(&mut data2 as &mut dyn Store<Item = i32>);
+            let cell3 = &*GhostCell::from_mut(&mut data3 as &mut dyn Store<Item = i32>);
+            let cell4 = &*GhostCell::from_mut(&mut data4 as &mut dyn Store<Item = i32>);
+            let array = [cell1, cell2, cell3, cell4];
 
-        // aliasing at start/end
-        let tuple2 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[0]);
-        assert!(tuple2.borrow_mut(&mut token).is_err());
+            let reference: [&mut dyn Store<Item = i32>; 4] = array.borrow_mut(&mut token).unwrap();
+            reference[0].set(33);
+            reference[1].set(34);
+            reference[2].set(35);
+            reference[3].set(36);
 
-        // aliasing at the start
-        let tuple3 = (&cells[0], &cells[0], &cells[1], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[11]);
-        assert!(tuple3.borrow_mut(&mut token).is_err());
+            (
+                array[0].borrow(&token).get(),
+                array[1].borrow(&token).get(),
+                array[2].borrow(&token).get(),
+            )
+        });
+        assert_eq!((33, 34, 35), value);
+    }
 
-        // aliasing at the end
-        let tuple4 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8], &cells[9], &cells[10], &cells[10]);
-        assert!(tuple4.borrow_mut(&mut token).is_err());
+    #[test]
+    #[should_panic]
+    fn multiple_borrows_tuple_unsized_aliased() {
+        GhostToken::new(|mut token| {
+            let mut data1 = 42;
+            let mut data2 = [47];
+            let mut data3 = 7;
 
-        // aliasing in the middle
-        let tuple5 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[5], &cells[7], &cells[8], &cells[9], &cells[10], &cells[11]);
-        assert!(tuple5.borrow_mut(&mut token).is_err());
-    });
-}
+            let cell1 = &*GhostCell::from_mut(&mut data1 as &mut dyn Store<Item = i32>);
+            let cell2 = &*GhostCell::from_mut(&mut data2 as &mut [i32]);
+            let cell3 = &*GhostCell::from_mut(&mut data3 as &mut dyn ToString);
 
+            let _: (&mut dyn Store<Item = i32>, &mut [i32], &mut dyn ToString, &mut [i32]) =
+                (cell1, cell2, cell3, cell2).borrow_mut(&mut token).unwrap();
+        });
+    }
+
+    #[test]
+    #[should_panic]
+    fn multiple_borrows_array_unsized_slice_aliased() {
+        GhostToken::new(|mut token| {
+            let mut data1 = [42];
+            let mut data2 = [47];
+            let mut data3 = [7];
+
+            let cell1 = &*GhostCell::from_mut(&mut data1 as &mut [i32]);
+            let cell2 = &*GhostCell::from_mut(&mut data2 as &mut [i32]);
+            let cell3 = &*GhostCell::from_mut(&mut data3 as &mut [i32]);
+            let array = [cell1, cell2, cell3, cell2];
+
+            let _: [&mut [i32]; 4] = array.borrow_mut(&mut token).unwrap();
+        });
+    }
+
+    #[test]
+    #[should_panic]
+    fn multiple_borrows_array_unsized_dyn_trait_aliased() {
+        GhostToken::new(|mut token| {
+            let mut data1 = 42;
+            let mut data2 = 47;
+            let mut data3 = 7;
+
+            let cell1 = &*GhostCell::from_mut(&mut data1 as &mut dyn Store<Item = i32>);
+            let cell2 = &*GhostCell::from_mut(&mut data2 as &mut dyn Store<Item = i32>);
+            let cell3 = &*GhostCell::from_mut(&mut data3 as &mut dyn Store<Item = i32>);
+            let array = [cell1, cell2, cell3, cell2];
+
+            let _: [&mut dyn Store<Item = i32>; 4] = array.borrow_mut(&mut token).unwrap();
+        });
+    }
+
+    #[test]
+    fn check_distinct() {
+        // small array
+        GhostToken::new(|mut token| {
+            let cells = [
+                GhostCell::new(1),
+                GhostCell::new(2),
+                GhostCell::new(3),
+                GhostCell::new(4),
+                GhostCell::new(5),
+                GhostCell::new(6),
+            ];
+
+            // no aliasing
+            let tuple1 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5]);
+            assert!(tuple1.borrow_mut(&mut token).is_ok());
+
+            // aliasing at start/end
+            let tuple2 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[0]);
+            assert!(tuple2.borrow_mut(&mut token).is_err());
+        });
+
+        // big array
+        GhostToken::new(|mut token| {
+            let cells = [
+                GhostCell::new(1),
+                GhostCell::new(2),
+                GhostCell::new(3),
+                GhostCell::new(4),
+                GhostCell::new(5),
+                GhostCell::new(6),
+                GhostCell::new(7),
+                GhostCell::new(8),
+                GhostCell::new(9),
+                GhostCell::new(10),
+                GhostCell::new(11),
+                GhostCell::new(12),
+            ];
+
+            // no aliasing
+            let tuple1 = (
+                &cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8],
+                &cells[9], &cells[10], &cells[11],
+            );
+            assert!(tuple1.borrow_mut(&mut token).is_ok());
+
+            // aliasing at start/end
+            let tuple2 = (
+                &cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8],
+                &cells[9], &cells[10], &cells[0],
+            );
+            assert!(tuple2.borrow_mut(&mut token).is_err());
+
+            // aliasing at the start
+            let tuple3 = (
+                &cells[0], &cells[0], &cells[1], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8],
+                &cells[9], &cells[10], &cells[11],
+            );
+            assert!(tuple3.borrow_mut(&mut token).is_err());
+
+            // aliasing at the end
+            let tuple4 = (
+                &cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8],
+                &cells[9], &cells[10], &cells[10],
+            );
+            assert!(tuple4.borrow_mut(&mut token).is_err());
+
+            // aliasing in the middle
+            let tuple5 = (
+                &cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[5], &cells[7], &cells[8],
+                &cells[9], &cells[10], &cells[11],
+            );
+            assert!(tuple5.borrow_mut(&mut token).is_err());
+        });
+    }
 } // mod tests
