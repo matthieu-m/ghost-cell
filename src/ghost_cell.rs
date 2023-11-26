@@ -432,7 +432,7 @@ impl<'brand, T, const N: usize> GhostCell<'brand, [T; N]> {
         unsafe { &*(self.as_ptr() as *mut [GhostCell<'brand, T>; N]) }
     }
 
-    /// Returns a cell containing a slice from slice of cells.
+    /// Returns a cell containing an array from an array of cells.
     ///
     /// #   Example
     ///
@@ -460,9 +460,46 @@ impl<'brand, T, const N: usize> GhostCell<'brand, [T; N]> {
         //  Safety:
         //  -   Same lifetime.
         //  -   `GhostCell<'_, T>` has the same in-memory representation as `T`.
-        unsafe { &*(array as *const [GhostCell<'brand, T>; N] as *const GhostCell<'brand, [T; N]>) }
+        unsafe { &*(array as *const [GhostCell<'brand, T>; N] as *const Self) }
     }
 }
+
+macro_rules! ghost_cell_transpose_tuple {
+    ($($t:ident),*) => {
+        impl<'brand, $($t),*> GhostCell<'brand, ($($t,)*)> {
+            /// Returns a reference to a tuple of cells from a cell containing a tuple.
+            pub fn as_tuple_of_cells(&self) -> &($(GhostCell<'brand, $t>,)*) {
+                //  Safety:
+                //  -   Same lifetime.
+                //  -   `GhostCell<'_, T>` has the same in-memory representation as `T`.
+                unsafe { &*(self.as_ptr() as *mut ($(GhostCell<'brand, $t>,)*)) }
+            }
+
+            /// Returns a cell containing a tuple from a tuple of cells.
+            #[allow(clippy::needless_lifetimes)]
+            pub fn from_tuple_of_cells<'a>(tuple: &'a ($(GhostCell<'brand, $t>,)*)) -> &'a Self {
+                //  Safety:
+                //  -   Same lifetime.
+                //  -   `GhostCell<'_, T>` has the same in-memory representation as `T`.
+                unsafe { &*(tuple as *const ($(GhostCell<'brand, $t>,)*) as *const Self) }
+            }
+        }
+    }
+}
+
+ghost_cell_transpose_tuple!();
+ghost_cell_transpose_tuple!(T0);
+ghost_cell_transpose_tuple!(T0, T1);
+ghost_cell_transpose_tuple!(T0, T1, T2);
+ghost_cell_transpose_tuple!(T0, T1, T2, T3);
+ghost_cell_transpose_tuple!(T0, T1, T2, T3, T4);
+ghost_cell_transpose_tuple!(T0, T1, T2, T3, T4, T5);
+ghost_cell_transpose_tuple!(T0, T1, T2, T3, T4, T5, T6);
+ghost_cell_transpose_tuple!(T0, T1, T2, T3, T4, T5, T6, T7);
+ghost_cell_transpose_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8);
+ghost_cell_transpose_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9);
+ghost_cell_transpose_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
+ghost_cell_transpose_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
 
 impl<'brand, T: ?Sized> AsMut<T> for GhostCell<'brand, T> {
     fn as_mut(&mut self) -> &mut T {
