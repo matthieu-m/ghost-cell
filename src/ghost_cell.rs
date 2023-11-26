@@ -373,6 +373,37 @@ impl<'brand, T> GhostCell<'brand, [T]> {
     }
 }
 
+impl<'brand, T> GhostCell<'brand, [T]> {
+    /// Returns a cell containing a slice from slice of cells.
+    ///
+    /// #   Example
+    ///
+    /// ```rust
+    /// use ghost_cell::{GhostToken, GhostCell};
+    ///
+    /// let n = 12;
+    ///
+    /// let value = GhostToken::new(|mut token| {
+    ///     let mut vec: Vec<_> = (0..n).collect();
+    ///     let cell = GhostCell::from_mut(&mut vec[..]);
+    ///     let all_elements = cell.as_slice_of_cells();
+    ///
+    ///     let quad = GhostCell::from_slice_of_cells(&all_elements[4..][..4]);
+    ///     quad.borrow_mut(&mut token).copy_from_slice(&33u32.to_be_bytes());
+    ///
+    ///     vec.iter().position(|&v| v == 33)
+    /// });
+    ///
+    /// assert_eq!(Some(7), value);
+    /// ```
+    pub fn from_slice_of_cells<'slice>(slice: &'slice [GhostCell<'brand, T>]) -> &'slice Self {
+        //  Safety:
+        //  -   Same lifetime.
+        //  -   `GhostCell<'_, T>` has the same in-memory representation as `T`.
+        unsafe { &*(slice as *const _ as *const GhostCell<'brand, [T]>) }
+    }
+}
+
 impl<'brand, T: ?Sized> AsMut<T> for GhostCell<'brand, T> {
     fn as_mut(&mut self) -> &mut T {
         self.get_mut()
