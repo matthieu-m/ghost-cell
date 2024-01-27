@@ -238,51 +238,102 @@ generate_public_instance!(a, b, c, d, e, f, g, h, i, j, k, l ; T0, T1, T2, T3, T
 //  Implementation
 //
 
-//  Returns the _inclusive_ range of memory covered by the value.
+//  Why Address?
 //
-//  #   Why an inclusive range?
+//  1.  Dynamically-sized types (DST) require checking for memory range overlap, not just pointer equality.
+//  2.  A value may be allocated at the very edge of the memory range, so that one-past-the-end would overflow (and
+//      wrap around) in address space.
 //
-//  -   Dynamically-sized types (DST) require checking for memory range overlap, not just pointer equality.
-//  -   If a value is at the very edge of the memory range, then one-past-the-end would overflow (and wrap around); an
-//      inclusive range has no wrap around issue.
-fn get_span<T: ?Sized>(value: &T) -> (*const u8, *const u8) {
-    //  FIXME: Do zero-sized values have a fixed address when part of an array or tuple?
+//  By using an integer one size up from the pointer size, we can guarantee that an exclusive range can successfully
+//  represent the range of memory covered by a value, without risking any overflow.
+//
+//  As an optimization, `u64` is used on 64-bits targets since for now no 64-bits target make use of the full address
+//  width, and using `u128` would be more costly.
 
-    let value_size = mem::size_of_val(value);
+#[cfg(target_pointer_width = "16")]
+type Address = u32;
 
-    let offset = if value_size == 0 { 0 } else { value_size - 1 };
+#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
+type Address = u64;
 
-    let start = value as *const T as *const u8;
+//  Returns the _exclusive_ range of memory covered by the value.
+fn get_span<T: ?Sized>(value: &T) -> (Address, Address) {
+    assert!(mem::size_of::<usize>() <= mem::size_of::<Address>());
 
-    //  Safety:
-    //  -   `end` is within the same allocation as `start`, since `value_size` is the size of the object.
-    //  -   `offset` does not overflow `isize`, as the value exists.
-    //  -   `offset` does not rely on wrapping around, since the value doesn't.
-    let end = unsafe { start.add(offset) };
+    let value_size = mem::size_of_val(value) as Address;
 
-    (start, end)
+    let start = value as *const T as *const u8 as usize as Address;
+
+    (start, start + value_size)
 }
 
-//  Returns `Ok(())` if the inclusive ranges do not overlap, and `Err(GhostAliasingError)` otherwise.
+//  Returns `Ok(())` if the exclusive ranges do not overlap, and `Err(GhostAliasingError)` otherwise.
 //
-//  Assumes that the ranges are _inclusive_.
-fn check_distinct<const N: usize>(mut array: [(*const u8, *const u8); N]) -> Result<(), GhostAliasingError> {
+//  Assumes that the ranges are _exclusive_.
+fn check_distinct<const N: usize>(mut array: [(Address, Address); N]) -> Result<(), GhostAliasingError> {
+    //  Remove ZSTs, if any.
+    let slice = select(&mut array, |&(start, end)| start < end);
+
     //  Sort slices by their start pointer.
-    array.sort_unstable_by_key(|t| t.0);
+    slice.sort_unstable_by_key(|t| t.0);
 
     //  Overlap can then be detected by whether the end of a slice overtakes the start of the next slice.
-    for window in array.windows(2) {
+    for window in slice.windows(2) {
         //  Safety:
         //  -   `window` is guaranteed to have exactly 2 elements.
         let (left, right) = unsafe { (window.get_unchecked(0), window.get_unchecked(1)) };
 
-        //  Due to ranges being _inclusive_, we need >=, not >.
-        if left.1 >= right.0 {
+        //  Due to ranges being _exclusive_, we need >, not >=.
+        if left.1 > right.0 {
             return Err(GhostAliasingError);
         }
     }
 
     Ok(())
+}
+
+//  Moves all elements of `slice` for which `predicate` is true to the start of `slice`.
+//
+//  Elements for which `predicate` is false are overwritten without a care in the world, the sub-slice of only-true
+//  elements is returned for convenience.
+fn select<T, F>(slice: &mut [T], predicate: F) -> &mut [T]
+where
+    T: Copy,
+    F: Fn(&T) -> bool,
+{
+    let data = slice.as_mut_ptr();
+    let length = slice.len();
+
+    if length == 0 {
+        return slice;
+    }
+
+    let mut write = 0;
+
+    for read in 0..length {
+        //  Safety:
+        //  -   `read < slice.len()`.
+        let element = unsafe { &*data.add(read) };
+
+        if !predicate(element) {
+            continue;
+        }
+
+        if read != write {
+            //  Safety:
+            //  -   `write < slice.len()`, since `write < read`.
+            //  -   `read` != `write`.
+            let slot = unsafe { &mut *data.add(write) };
+
+            *slot = *element;
+        }
+
+        write += 1;
+    }
+
+    //  Safety:
+    //  -   `write < slice.len()`.
+    unsafe { slice.get_unchecked_mut(0..write) }
 }
 
 #[cfg(test)]
@@ -554,7 +605,7 @@ mod tests {
 
     #[test]
     fn check_distinct() {
-        // small array
+        //  Small Array.
         GhostToken::new(|mut token| {
             let cells = [
                 GhostCell::new(1),
@@ -565,16 +616,16 @@ mod tests {
                 GhostCell::new(6),
             ];
 
-            // no aliasing
+            //  No aliasing.
             let tuple1 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5]);
             assert!(tuple1.borrow_mut(&mut token).is_ok());
 
-            // aliasing at start/end
+            //  Aliasing at start/end.
             let tuple2 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[0]);
             assert!(tuple2.borrow_mut(&mut token).is_err());
         });
 
-        // big array
+        //  Big Array.
         GhostToken::new(|mut token| {
             let cells = [
                 GhostCell::new(1),
@@ -591,40 +642,63 @@ mod tests {
                 GhostCell::new(12),
             ];
 
-            // no aliasing
+            //  No aliasing.
             let tuple1 = (
                 &cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8],
                 &cells[9], &cells[10], &cells[11],
             );
             assert!(tuple1.borrow_mut(&mut token).is_ok());
 
-            // aliasing at start/end
+            //  Aliasing at start/end.
             let tuple2 = (
                 &cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8],
                 &cells[9], &cells[10], &cells[0],
             );
             assert!(tuple2.borrow_mut(&mut token).is_err());
 
-            // aliasing at the start
+            //  Aliasing at the start.
             let tuple3 = (
                 &cells[0], &cells[0], &cells[1], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8],
                 &cells[9], &cells[10], &cells[11],
             );
             assert!(tuple3.borrow_mut(&mut token).is_err());
 
-            // aliasing at the end
+            //  Aliasing at the end.
             let tuple4 = (
                 &cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8],
                 &cells[9], &cells[10], &cells[10],
             );
             assert!(tuple4.borrow_mut(&mut token).is_err());
 
-            // aliasing in the middle
+            //  Aliasing in the middle.
             let tuple5 = (
                 &cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[5], &cells[7], &cells[8],
                 &cells[9], &cells[10], &cells[11],
             );
             assert!(tuple5.borrow_mut(&mut token).is_err());
+        });
+    }
+
+    #[test]
+    fn check_distinct_zst() {
+        //  Check that ZSTs are always considered distincts.
+        GhostToken::new(|mut token| {
+            let zst = GhostCell::new(());
+
+            let tuple = (&zst, &zst);
+            assert!(tuple.borrow_mut(&mut token).is_ok());
+        });
+    }
+
+    #[test]
+    fn check_distinct_inner_zst() {
+        //  Check that an inner ZST is still considered distinct from its outer instance.
+        GhostToken::new(|mut token| {
+            let outer = GhostCell::new((1, (), 2));
+            let (_, inner, _) = outer.as_tuple_of_cells();
+
+            let tuple = (&outer, inner);
+            assert!(tuple.borrow_mut(&mut token).is_ok());
         });
     }
 } // mod tests
