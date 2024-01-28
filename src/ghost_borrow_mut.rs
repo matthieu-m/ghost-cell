@@ -9,8 +9,21 @@
 //!
 //! #   Performance
 //!
-//! In general borrowing is free of cost, however a special-case is necessary for the tuple of references, as then the
-//! references may alias.
+//! In general borrowing is free of cost, however a special-case is necessary for an array or tuple of references, as
+//! then the references may alias.
+//!
+//! #   Zero-Sized Type Handling
+//!
+//! While purely in terms of memory it is sound to obtain two mutable references to a given Zero-Sized Type (ZST)
+//! instance, since no memory reads or writes will actually be performed, this is not supported by `GhostBorrowMut`.
+//!
+//! As noted by @wackbytes in [issue #32](https://github.com/matthieu-m/ghost-cell/issues/32) the problem is that
+//! certain ZSTs encode capabilities, for example, `GhostToken` does. Obtaining two mutable references to a given
+//! `GhostToken` then allow mutably borrowing the same `GhostCell` twice, which easily leads to unsoundness.
+//!
+//! Unfortunately, there is no easy way to distinguish between a ZST with special capabilities associated to it, and a
+//! ZST without such special capabilities. Therefore, for soundness reasons, all ZSTs must be treated as potentially
+//! having special capabilities. As a result, `GhostBorrowMut` does not allow borrowing the same ZST mutably twice.
 //!
 //! #   Experimental
 //!
@@ -245,28 +258,20 @@ generate_public_instance!(a, b, c, d, e, f, g, h, i, j, k, l ; T0, T1, T2, T3, T
 //  -   Dynamically-sized types (DST) require checking for memory range overlap, not just pointer equality.
 //  -   If a value is at the very edge of the memory range, then one-past-the-end would overflow (and wrap around); an
 //      inclusive range has no wrap around issue.
-fn get_span<T: ?Sized>(value: &T) -> (*const u8, *const u8) {
-    //  FIXME: Do zero-sized values have a fixed address when part of an array or tuple?
-
+fn get_span<T: ?Sized>(value: &T) -> (usize, usize) {
     let value_size = mem::size_of_val(value);
 
     let offset = if value_size == 0 { 0 } else { value_size - 1 };
 
-    let start = value as *const T as *const u8;
+    let start = value as *const T as *const u8 as usize;
 
-    //  Safety:
-    //  -   `end` is within the same allocation as `start`, since `value_size` is the size of the object.
-    //  -   `offset` does not overflow `isize`, as the value exists.
-    //  -   `offset` does not rely on wrapping around, since the value doesn't.
-    let end = unsafe { start.add(offset) };
-
-    (start, end)
+    (start, start + offset)
 }
 
 //  Returns `Ok(())` if the inclusive ranges do not overlap, and `Err(GhostAliasingError)` otherwise.
 //
 //  Assumes that the ranges are _inclusive_.
-fn check_distinct<const N: usize>(mut array: [(*const u8, *const u8); N]) -> Result<(), GhostAliasingError> {
+fn check_distinct<const N: usize>(mut array: [(usize, usize); N]) -> Result<(), GhostAliasingError> {
     //  Sort slices by their start pointer.
     array.sort_unstable_by_key(|t| t.0);
 
@@ -554,7 +559,7 @@ mod tests {
 
     #[test]
     fn check_distinct() {
-        // small array
+        //  Small array.
         GhostToken::new(|mut token| {
             let cells = [
                 GhostCell::new(1),
@@ -565,16 +570,16 @@ mod tests {
                 GhostCell::new(6),
             ];
 
-            // no aliasing
+            //  No aliasing.
             let tuple1 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5]);
             assert!(tuple1.borrow_mut(&mut token).is_ok());
 
-            // aliasing at start/end
+            //  Aliasing at start/end.
             let tuple2 = (&cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[0]);
             assert!(tuple2.borrow_mut(&mut token).is_err());
         });
 
-        // big array
+        //  Big array.
         GhostToken::new(|mut token| {
             let cells = [
                 GhostCell::new(1),
@@ -591,40 +596,63 @@ mod tests {
                 GhostCell::new(12),
             ];
 
-            // no aliasing
+            //  No aliasing.
             let tuple1 = (
                 &cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8],
                 &cells[9], &cells[10], &cells[11],
             );
             assert!(tuple1.borrow_mut(&mut token).is_ok());
 
-            // aliasing at start/end
+            //  Aliasing at start/end.
             let tuple2 = (
                 &cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8],
                 &cells[9], &cells[10], &cells[0],
             );
             assert!(tuple2.borrow_mut(&mut token).is_err());
 
-            // aliasing at the start
+            //  Aliasing at the start.
             let tuple3 = (
                 &cells[0], &cells[0], &cells[1], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8],
                 &cells[9], &cells[10], &cells[11],
             );
             assert!(tuple3.borrow_mut(&mut token).is_err());
 
-            // aliasing at the end
+            //  Aliasing at the end.
             let tuple4 = (
                 &cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &cells[7], &cells[8],
                 &cells[9], &cells[10], &cells[10],
             );
             assert!(tuple4.borrow_mut(&mut token).is_err());
 
-            // aliasing in the middle
+            //  Aliasing in the middle.
             let tuple5 = (
                 &cells[0], &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[5], &cells[7], &cells[8],
                 &cells[9], &cells[10], &cells[11],
             );
             assert!(tuple5.borrow_mut(&mut token).is_err());
+        });
+    }
+
+    #[test]
+    fn check_distinct_zst() {
+        //  Check that ZSTs are never considered distincts.
+        GhostToken::new(|mut token| {
+            let zst = GhostCell::new(());
+
+            let tuple = (&zst, &zst);
+            assert!(tuple.borrow_mut(&mut token).is_err());
+        });
+    }
+
+    #[test]
+    fn check_distinct_inner_zst() {
+        //  Check that an inner ZST is not considered distinct from its outer instance.
+        GhostToken::new(|mut token| {
+            let outer = GhostCell::new((1, (), 2));
+            let (_, inner, _) = outer.as_tuple_of_cells();
+
+            let tuple = (&outer, inner);
+            assert!(tuple.borrow_mut(&mut token).is_err());
         });
     }
 } // mod tests
